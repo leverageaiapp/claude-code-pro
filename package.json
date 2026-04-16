@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/leverageaiapp/claude-code-pro.git"
   },
   "main": "dist-electron/main.js",
   "scripts": {

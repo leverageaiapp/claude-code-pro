@@ -38,7 +38,7 @@ Claude Code Pro fixes both. It's a thin Electron wrapper around the `claude` CLI
 ## Run from source
 
 ```bash
-git clone https://github.com/<your-org>/claude-code-pro.git
+git clone https://github.com/leverageaiapp/claude-code-pro.git
 cd claude-code-pro
 npm install
 npx electron-rebuild -f -w node-pty   # rebuild native module for Electron
