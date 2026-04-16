@@ -16,6 +16,7 @@ import { useFileStore } from './stores/fileStore'
 import { useTabStore } from './stores/tabStore'
 import { useDebugStore, debug } from './stores/debugStore'
 import { DebugPanel } from './components/DebugPanel'
+import { useActivityStore } from './stores/activityStore'
 import { Bug } from 'lucide-react'
 
 function App() {
@@ -36,6 +37,33 @@ function App() {
     })
     return remove
   }, [])
+
+  // Subscribe to file system events — tag each by its workspace cwd
+  useEffect(() => {
+    const remove = window.electronAPI.fsWatch.onEvent(({ path, cwd: watchedCwd }) => {
+      useActivityStore.getState().markTouched(watchedCwd, path)
+    })
+    return remove
+  }, [])
+
+  // Maintain one fs watcher per unique workspace cwd that has an open terminal tab.
+  // This way Claude editing files in a background tab still gets recorded.
+  useEffect(() => {
+    const uniqueCwds = Array.from(
+      new Set(tabs.filter((t) => t.type === 'terminal' && t.cwd).map((t) => t.cwd))
+    )
+
+    uniqueCwds.forEach((cwd) => {
+      const watchId = `ws-${cwd}`
+      window.electronAPI.fsWatch.start(watchId, cwd)
+    })
+
+    return () => {
+      uniqueCwds.forEach((cwd) => {
+        window.electronAPI.fsWatch.stop(`ws-${cwd}`)
+      })
+    }
+  }, [tabs.map((t) => t.cwd).join('|')])
 
   // On first launch: prompt to open a folder if none exists
   useEffect(() => {

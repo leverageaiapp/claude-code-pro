@@ -78,4 +78,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('debug:log', listener)
     return () => ipcRenderer.removeListener('debug:log', listener)
   },
+
+  // File system watcher (to detect Claude's edits)
+  fsWatch: {
+    start: (watchId: string, cwd: string) => ipcRenderer.invoke('fsWatch:start', watchId, cwd),
+    stop: (watchId: string) => ipcRenderer.invoke('fsWatch:stop', watchId),
+    onEvent: (callback: (data: { watchId: string; cwd: string; path: string; eventType: string }) => void) => {
+      const listener = (_e: any, data: any) => callback(data)
+      ipcRenderer.on('fsWatch:event', listener)
+      return () => ipcRenderer.removeListener('fsWatch:event', listener)
+    },
+  },
 })

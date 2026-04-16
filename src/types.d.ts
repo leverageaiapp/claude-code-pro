@@ -57,6 +57,13 @@ interface ElectronAPI {
     onError: (callback: (data: any) => void) => () => void
   }
   onDebugLog: (callback: (data: { source: string; message: string }) => void) => () => void
+  fsWatch: {
+    start: (watchId: string, cwd: string) => Promise<boolean>
+    stop: (watchId: string) => Promise<void>
+    onEvent: (
+      callback: (data: { watchId: string; cwd: string; path: string; eventType: string }) => void
+    ) => () => void
+  }
   terminal: {
     create: (tabId: string, cwd: string) => Promise<boolean>
     write: (tabId: string, data: string) => Promise<void>

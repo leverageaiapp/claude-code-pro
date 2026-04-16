@@ -112,3 +112,63 @@
   animation: blink 1s step-end infinite;
   color: #007acc;
 }
+
+/* === Claude file activity highlights === */
+
+/* Big pulsing glow on the orange dot indicator */
+@keyframes claude-dot-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7), 0 0 8px 2px rgba(34, 197, 94, 0.5);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0), 0 0 16px 6px rgba(34, 197, 94, 0.7);
+    transform: scale(1.4);
+  }
+}
+
+.claude-pulse {
+  animation: claude-dot-pulse 1.2s ease-in-out infinite;
+  background: rgb(34, 197, 94) !important;
+}
+
+/* Touched file: bright green flash that fades out, with strong left border */
+@keyframes claude-row-flash {
+  0% {
+    background: rgba(34, 197, 94, 0.5);
+    box-shadow: inset 4px 0 0 0 rgb(34, 197, 94), inset 0 0 20px rgba(34, 197, 94, 0.3);
+  }
+  20% {
+    background: rgba(34, 197, 94, 0.55);
+    box-shadow: inset 4px 0 0 0 rgb(34, 197, 94), inset 0 0 30px rgba(34, 197, 94, 0.4);
+  }
+  100% {
+    background: rgba(34, 197, 94, 0.08);
+    box-shadow: inset 4px 0 0 0 rgba(34, 197, 94, 0.6), inset 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.claude-touched {
+  animation: claude-row-flash 3.5s ease-out forwards;
+  position: relative;
+}
+
+.claude-touched > span:last-of-type:not(.claude-pulse) {
+  color: rgb(134, 239, 172) !important;
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+/* Folder containing touched files — softer but still visible */
+@keyframes claude-folder-hint {
+  0%, 100% {
+    background: rgba(34, 197, 94, 0.05);
+  }
+  50% {
+    background: rgba(34, 197, 94, 0.18);
+  }
+}
+
+.claude-ancestor-touched {
+  animation: claude-folder-hint 1.8s ease-in-out infinite;
+}

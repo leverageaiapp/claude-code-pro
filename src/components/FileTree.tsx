@@ -13,6 +13,7 @@ import {
 import type { FileEntry } from '../types'
 import { useFileStore } from '../stores/fileStore'
 import { useTabStore } from '../stores/tabStore'
+import { useActivityStore } from '../stores/activityStore'
 
 // Helper to get cwd from file store
 function useCurrentCwd() {
@@ -159,12 +160,28 @@ interface TreeNodeProps {
   onRefresh: () => void
 }
 
+const EMPTY_MAP: Map<string, number> = new Map()
+
 function TreeNode({ entry, depth, onRefresh }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileEntry[]>([])
   const { addEditorTab } = useTabStore()
   const { activeTabId, tabs } = useTabStore()
   const currentCwd = useCurrentCwd()
+
+  // Subscribe only to the slice we need, with stable empty fallback
+  const touchedMap = useActivityStore((s) => s.touchedByWorkspace.get(currentCwd)) ?? EMPTY_MAP
+  const isTouched = entry.isDirectory
+    ? false
+    : (touchedMap.get(entry.path) ?? 0) > Date.now()
+  const ancestorTouched = entry.isDirectory && (() => {
+    const prefix = entry.path.endsWith('/') ? entry.path : entry.path + '/'
+    const now = Date.now()
+    for (const [p, exp] of touchedMap) {
+      if (exp > now && p.startsWith(prefix)) return true
+    }
+    return false
+  })()
 
   const loadChildren = useCallback(async () => {
     if (entry.isDirectory) {
@@ -205,7 +222,9 @@ function TreeNode({ entry, depth, onRefresh }: TreeNodeProps) {
   return (
     <div>
       <div
-        className={`file-tree-item flex items-center gap-1 py-[2px] cursor-pointer select-none ${isActive ? 'active' : ''}`}
+        className={`file-tree-item flex items-center gap-1 py-[2px] cursor-pointer select-none relative ${
+          isActive ? 'active' : ''
+        } ${isTouched ? 'claude-touched' : ''} ${ancestorTouched && !isTouched ? 'claude-ancestor-touched' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         draggable
@@ -231,6 +250,12 @@ function TreeNode({ entry, depth, onRefresh }: TreeNodeProps) {
           </>
         )}
         <span className="text-[13px] text-gray-300 truncate">{entry.name}</span>
+        {(isTouched || ancestorTouched) && (
+          <span
+            className="ml-auto mr-2 w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0 claude-pulse"
+            title={isTouched ? 'Recently edited by Claude' : 'Contains a file recently edited by Claude'}
+          />
+        )}
       </div>
       {expanded &&
         children.map((child) => (

@@ -25,16 +25,20 @@ function createWindow() {
   })
 
   const sendDebug = (msg: string) => {
-    mainWindow?.webContents.send('debug:log', { source: 'main', message: msg })
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('debug:log', { source: 'main', message: msg })
+    }
   }
 
   mainWindow.webContents.on('will-navigate', (e, url) => {
-    sendDebug(`will-navigate to: ${url}`)
-    e.preventDefault()
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      shell.openExternal(url)
-      sendDebug(`opened external: ${url}`)
+    // Just prevent navigation — do NOT auto-open in browser, this can trigger
+    // on HMR reloads and other internal navigations
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || ''
+    if (devServerUrl && url.startsWith(devServerUrl)) {
+      return // allow HMR / internal reloads
     }
+    sendDebug(`will-navigate blocked: ${url}`)
+    e.preventDefault()
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -108,12 +112,27 @@ function createWindow() {
 
 app.whenReady().then(createWindow)
 
-app.on('window-all-closed', () => {
-  // Kill all claude processes
-  claudeProcesses.forEach((proc) => proc.kill())
+function cleanup() {
+  claudeProcesses.forEach((proc) => {
+    try { proc.kill() } catch {}
+  })
   claudeProcesses.clear()
+  ptyProcesses.forEach((proc) => {
+    try { proc.kill() } catch {}
+  })
+  ptyProcesses.clear()
+  watchers.forEach((w) => {
+    try { w.close() } catch {}
+  })
+  watchers.clear()
+}
+
+app.on('window-all-closed', () => {
+  cleanup()
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', cleanup)
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -356,12 +375,16 @@ ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => 
     ptyProcesses.set(tabId, ptyProc)
 
     ptyProc.onData((data: string) => {
-      mainWindow?.webContents.send(`terminal:data:${tabId}`, data)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(`terminal:data:${tabId}`, data)
+      }
     })
 
     ptyProc.onExit(() => {
       ptyProcesses.delete(tabId)
-      mainWindow?.webContents.send(`terminal:exit:${tabId}`)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(`terminal:exit:${tabId}`)
+      }
     })
 
     // Auto-launch claude in new terminals
@@ -393,5 +416,66 @@ ipcMain.handle('terminal:dispose', async (_event, tabId: string) => {
   if (proc) {
     proc.kill()
     ptyProcesses.delete(tabId)
+  }
+})
+
+// ===== File System Watcher (to detect Claude's edits) =====
+
+const watchers = new Map<string, fs.FSWatcher>()
+
+// Paths that we never want to report as "touched"
+const IGNORED_PATTERNS = [
+  /(^|\/)\.git(\/|$)/,
+  /(^|\/)node_modules(\/|$)/,
+  /(^|\/)dist(\/|$)/,
+  /(^|\/)dist-electron(\/|$)/,
+  /(^|\/)release(\/|$)/,
+  /(^|\/)\.next(\/|$)/,
+  /(^|\/)\.turbo(\/|$)/,
+  /(^|\/)\.cache(\/|$)/,
+  /(^|\/)build(\/|$)/,
+  /(^|\/)out(\/|$)/,
+  /(^|\/)\.DS_Store$/,
+  /\.log$/,
+  /\.lock$/,
+]
+
+function shouldIgnore(relativePath: string): boolean {
+  return IGNORED_PATTERNS.some((re) => re.test(relativePath))
+}
+
+ipcMain.handle('fsWatch:start', async (_event, watchId: string, cwd: string) => {
+  // Stop existing watcher with same id
+  watchers.get(watchId)?.close()
+
+  try {
+    const watcher = fs.watch(cwd, { recursive: true }, (eventType, filename) => {
+      if (!filename) return
+      const relPath = filename.toString()
+      if (shouldIgnore(relPath)) return
+
+      const fullPath = path.join(cwd, relPath)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('fsWatch:event', {
+          watchId,
+          cwd,
+          path: fullPath,
+          eventType, // 'rename' | 'change'
+        })
+      }
+    })
+    watchers.set(watchId, watcher)
+    return true
+  } catch (err: any) {
+    console.error(`Failed to watch ${cwd}:`, err)
+    return false
+  }
+})
+
+ipcMain.handle('fsWatch:stop', async (_event, watchId: string) => {
+  const watcher = watchers.get(watchId)
+  if (watcher) {
+    watcher.close()
+    watchers.delete(watchId)
   }
 })
