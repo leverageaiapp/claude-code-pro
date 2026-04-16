@@ -1,5 +1,8 @@
 # Claude Code Pro
 
+[![Build](https://github.com/leverageaiapp/claude-code-pro/actions/workflows/build.yml/badge.svg)](https://github.com/leverageaiapp/claude-code-pro/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 > A multi-workspace desktop client for [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview) — gives you a file tree and parallel project workspaces on top of the terminal you already love.
 
 ## Why
@@ -47,13 +50,26 @@ npm run dev
 
 The Electron window opens, prompts you to pick a folder, and you're in.
 
-## Build
+## Build a packaged app
 
 ```bash
-npm run build
+# macOS .dmg (Apple Silicon + Intel)
+npm run dist:mac
+
+# Windows installer
+npm run dist:win
+
+# Linux AppImage
+npm run dist:linux
 ```
 
-Outputs to `dist/` and `dist-electron/`. To package as a `.dmg`, install [`electron-builder`](https://www.electron.build/) and add a `build` config to `package.json` — see their docs.
+Output goes to `release/<version>/`.
+
+## Download
+
+Pre-built binaries for macOS, Windows and Linux are produced automatically by GitHub Actions. Grab them from the [latest release](https://github.com/leverageaiapp/claude-code-pro/releases/latest).
+
+> Note: builds are **unsigned**. On macOS the first launch requires right-click → Open to bypass Gatekeeper.
 
 ## Tech stack
 
