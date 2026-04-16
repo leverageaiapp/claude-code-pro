@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* Title bar drag region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Monaco editor container */
+.monaco-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* xterm terminal */
+.xterm-container {
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+}
+
+.xterm-container .xterm {
+  height: 100%;
+}
+
+/* Chat message styling */
+.chat-message pre {
+  background: #2d2d2d;
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.chat-message code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+}
+
+.chat-message p code {
+  background: #2d2d2d;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.chat-message ul, .chat-message ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.chat-message h1, .chat-message h2, .chat-message h3 {
+  margin-top: 12px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+/* File tree */
+.file-tree-item:hover {
+  background: #2a2d2e;
+}
+
+.file-tree-item.active {
+  background: #37373d;
+}
+
+/* Resizable panels */
+.resize-handle {
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.resize-handle:hover {
+  background: #007acc;
+}
+
+/* Animation for streaming text */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: '|';
+  animation: blink 1s step-end infinite;
+  color: #007acc;
+}
