@@ -98,6 +98,23 @@ export function TerminalPanel({ tabId, cwd, isActive }: TerminalPanelProps) {
           window.electronAPI.terminal.resize(tabId, cols, rows)
         })
 
+        // Clean up trailing whitespace on copy (xterm pads each line to terminal width)
+        term.attachCustomKeyEventHandler((e) => {
+          if (e.type === 'keydown' && (e.metaKey || e.ctrlKey) && e.key === 'c') {
+            const sel = term.getSelection()
+            if (sel) {
+              const cleaned = sel
+                .split('\n')
+                .map((line) => line.replace(/\s+$/, ''))
+                .join('\n')
+                .replace(/\n+$/, '') // also trim trailing empty lines
+              navigator.clipboard.writeText(cleaned).catch(() => {})
+              return false // prevent xterm default copy
+            }
+          }
+          return true
+        })
+
         setTimeout(() => {
           fit.fit()
           window.electronAPI.terminal.resize(tabId, term.cols, term.rows)
