@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import 'highlight.js/styles/github-dark.css';
+
 * {
   box-sizing: border-box;
 }
@@ -80,6 +82,120 @@
   margin-top: 12px;
   margin-bottom: 4px;
   font-weight: 600;
+}
+
+/* Markdown preview */
+.markdown-preview {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #d4d4d4;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-weight: 600;
+  margin: 24px 0 12px;
+  color: #e8e8e8;
+  line-height: 1.3;
+}
+
+.markdown-preview h1 { font-size: 28px; border-bottom: 1px solid #3c3c3c; padding-bottom: 8px; }
+.markdown-preview h2 { font-size: 22px; border-bottom: 1px solid #3c3c3c; padding-bottom: 6px; }
+.markdown-preview h3 { font-size: 18px; }
+.markdown-preview h4 { font-size: 16px; }
+.markdown-preview h5, .markdown-preview h6 { font-size: 14px; }
+
+.markdown-preview p {
+  margin: 10px 0;
+}
+
+.markdown-preview a {
+  color: #4aa3ff;
+  text-decoration: none;
+}
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview ul, .markdown-preview ol {
+  padding-left: 28px;
+  margin: 10px 0;
+}
+
+.markdown-preview li {
+  margin: 4px 0;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid #4aa3ff;
+  padding: 2px 12px;
+  margin: 12px 0;
+  color: #a8a8a8;
+  background: rgba(74, 163, 255, 0.05);
+}
+
+.markdown-preview code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  background: #2d2d2d;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.markdown-preview pre {
+  background: #1a1a1a;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  width: 100%;
+}
+
+.markdown-preview th, .markdown-preview td {
+  border: 1px solid #3c3c3c;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.markdown-preview th {
+  background: #2a2a2a;
+  font-weight: 600;
+}
+
+.markdown-preview tr:nth-child(even) td {
+  background: #242424;
+}
+
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid #3c3c3c;
+  margin: 20px 0;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.markdown-preview input[type='checkbox'] {
+  margin-right: 6px;
 }
 
 /* File tree */

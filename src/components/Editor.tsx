@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react'
 import * as monaco from 'monaco-editor'
+import { Eye, Code2 } from 'lucide-react'
 import type { Tab } from '../stores/tabStore'
 import { useTabStore } from '../stores/tabStore'
+import { MarkdownPreview } from './MarkdownPreview'
 
 // Configure Monaco workers
 self.MonacoEnvironment = {
@@ -27,7 +29,10 @@ const editorInstances = new Map<string, monaco.editor.IStandaloneCodeEditor>()
 
 export function EditorPanel({ tab, isActive }: EditorPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { updateTabContent, markTabClean } = useTabStore()
+  const { updateTabContent, markTabClean, setTabViewMode } = useTabStore()
+
+  const isMarkdown = tab.language === 'markdown'
+  const showPreview = isMarkdown && tab.viewMode === 'preview'
 
   const setupEditor = useCallback(() => {
     if (!containerRef.current) return
@@ -74,20 +79,20 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
       })
     }
 
-    // Layout when becoming active
-    if (isActive) {
+    // Layout when becoming active (but not when preview is covering the editor)
+    if (isActive && !showPreview) {
       setTimeout(() => editor?.layout(), 50)
       editor.focus()
     }
-  }, [tab.id, isActive])
+  }, [tab.id, isActive, showPreview])
 
   useEffect(() => {
     setupEditor()
   }, [setupEditor])
 
-  // Re-layout on active change
+  // Re-layout on active change or when leaving preview mode
   useEffect(() => {
-    if (isActive) {
+    if (isActive && !showPreview) {
       const editor = editorInstances.get(tab.id)
       if (editor) {
         setTimeout(() => {
@@ -96,9 +101,50 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
         }, 50)
       }
     }
-  }, [isActive, tab.id])
+  }, [isActive, tab.id, showPreview])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  return (
+    <div className="relative w-full h-full">
+      <div
+        ref={containerRef}
+        className="w-full h-full"
+        style={{ visibility: showPreview ? 'hidden' : 'visible' }}
+      />
+
+      {showPreview && (
+        <div className="absolute inset-0">
+          <MarkdownPreview content={tab.fileContent || ''} />
+        </div>
+      )}
+
+      {isMarkdown && (
+        <div className="absolute top-2 right-4 z-10 flex items-center gap-1 bg-[#252526] border border-[#3c3c3c] rounded-md shadow-md overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setTabViewMode(tab.id, 'preview')}
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] transition-colors ${
+              showPreview ? 'bg-[#37373d] text-white' : 'text-[#cccccc] hover:bg-[#2a2d2e]'
+            }`}
+            title="Preview"
+          >
+            <Eye size={12} />
+            Preview
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabViewMode(tab.id, 'source')}
+            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] transition-colors ${
+              !showPreview ? 'bg-[#37373d] text-white' : 'text-[#cccccc] hover:bg-[#2a2d2e]'
+            }`}
+            title="Source"
+          >
+            <Code2 size={12} />
+            Source
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Cleanup when tab is closed

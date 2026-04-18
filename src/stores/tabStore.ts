@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 export type TabType = 'terminal' | 'editor'
 
+export type EditorViewMode = 'preview' | 'source'
+
 export interface Tab {
   id: string
   type: TabType
@@ -12,6 +14,7 @@ export interface Tab {
   fileContent?: string
   language?: string
   isDirty?: boolean
+  viewMode?: EditorViewMode // only for markdown files; preview by default
 }
 
 interface TabStore {
@@ -25,6 +28,7 @@ interface TabStore {
   updateTabContent: (id: string, content: string) => void
   markTabClean: (id: string) => void
   updateTabTitle: (id: string, title: string) => void
+  setTabViewMode: (id: string, mode: EditorViewMode) => void
   getActiveTab: () => Tab | undefined
 }
 
@@ -81,6 +85,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
 
     const name = filePath.split('/').pop() || filePath
     const id = genId()
+    const resolvedLanguage = language || getLanguage(name)
     const tab: Tab = {
       id,
       type: 'editor',
@@ -88,8 +93,9 @@ export const useTabStore = create<TabStore>((set, get) => ({
       cwd,
       filePath,
       fileContent: content,
-      language: language || getLanguage(name),
+      language: resolvedLanguage,
       isDirty: false,
+      viewMode: resolvedLanguage === 'markdown' ? 'preview' : undefined,
     }
     set((state) => ({
       tabs: [...state.tabs, tab],
@@ -128,6 +134,11 @@ export const useTabStore = create<TabStore>((set, get) => ({
   updateTabTitle: (id, title) =>
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, title } : t)),
+    })),
+
+  setTabViewMode: (id, mode) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, viewMode: mode } : t)),
     })),
 
   getActiveTab: () => {
