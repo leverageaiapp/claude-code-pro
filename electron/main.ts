@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, powerSaveBlocker } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { spawn, ChildProcess } from 'child_process'
@@ -110,7 +110,12 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Keep the app alive when the lid is closed so pty sessions
+  // (e.g. running `claude`) survive overnight sleep.
+  powerSaveBlocker.start('prevent-app-suspension')
+  createWindow()
+})
 
 function cleanup() {
   claudeProcesses.forEach((proc) => {
