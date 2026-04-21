@@ -4,6 +4,7 @@ import { Eye, Code2 } from 'lucide-react'
 import type { Tab } from '../stores/tabStore'
 import { useTabStore } from '../stores/tabStore'
 import { MarkdownPreview } from './MarkdownPreview'
+import { ExcalidrawEditor } from './ExcalidrawEditor'
 
 // Configure Monaco workers
 self.MonacoEnvironment = {
@@ -31,10 +32,12 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { updateTabContent, markTabClean, setTabViewMode } = useTabStore()
 
+  const isExcalidraw = tab.filePath?.endsWith('.excalidraw') ?? false
   const isMarkdown = tab.language === 'markdown'
   const showPreview = isMarkdown && tab.viewMode === 'preview'
 
   const setupEditor = useCallback(() => {
+    if (isExcalidraw) return
     if (!containerRef.current) return
 
     let editor = editorInstances.get(tab.id)
@@ -84,7 +87,7 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
       setTimeout(() => editor?.layout(), 50)
       editor.focus()
     }
-  }, [tab.id, isActive, showPreview])
+  }, [tab.id, isActive, showPreview, isExcalidraw])
 
   useEffect(() => {
     setupEditor()
@@ -92,6 +95,7 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
 
   // Re-layout on active change or when leaving preview mode
   useEffect(() => {
+    if (isExcalidraw) return
     if (isActive && !showPreview) {
       const editor = editorInstances.get(tab.id)
       if (editor) {
@@ -101,7 +105,11 @@ export function EditorPanel({ tab, isActive }: EditorPanelProps) {
         }, 50)
       }
     }
-  }, [isActive, tab.id, showPreview])
+  }, [isActive, tab.id, showPreview, isExcalidraw])
+
+  if (isExcalidraw) {
+    return <ExcalidrawEditor tab={tab} />
+  }
 
   return (
     <div className="relative w-full h-full">

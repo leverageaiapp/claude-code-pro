@@ -10,6 +10,12 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Tell Excalidraw where to load its drawing fonts from.
+      // Runs before any module import so the path is set before the
+      // Excalidraw component initialises its font loader.
+      window.EXCALIDRAW_ASSET_PATH = '/excalidraw-assets/'
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -48,3 +48,9 @@ Thumbs.db
 # Misc
 *.tsbuildinfo
 excalidraw.log
+
+# Copied at install time from node_modules (see postinstall script)
+public/excalidraw-assets/
+
+# Claude Code harness local state
+.claude/
