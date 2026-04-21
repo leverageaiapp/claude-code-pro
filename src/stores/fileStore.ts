@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface OpenFile {
   path: string
@@ -58,7 +59,9 @@ function getLanguage(filename: string): string {
   return map[ext] || 'plaintext'
 }
 
-export const useFileStore = create<FileStore>((set, get) => ({
+export const useFileStore = create<FileStore>()(
+  persist(
+    (set, get) => ({
   cwd: '',
   setCwd: (path) => set({ cwd: path }),
 
@@ -115,4 +118,13 @@ export const useFileStore = create<FileStore>((set, get) => ({
       openFiles: state.openFiles.map((f) => (f.path === filePath ? { ...f, isDirty: false } : f)),
     }))
   },
-}))
+    }),
+    {
+      name: 'claude-code-pro:workspace',
+      storage: createJSONStorage(() => localStorage),
+      // Only persist the workspace folder — openFiles is ephemeral
+      // per-session state that re-reads from disk on open.
+      partialize: (state) => ({ cwd: state.cwd }),
+    },
+  ),
+)

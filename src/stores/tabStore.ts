@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 export type TabType = 'terminal' | 'editor'
 
@@ -54,7 +55,9 @@ function folderName(cwd: string) {
   return cwd.split('/').pop() || cwd
 }
 
-export const useTabStore = create<TabStore>((set, get) => ({
+export const useTabStore = create<TabStore>()(
+  persist(
+    (set, get) => ({
   tabs: [],
   activeTabId: null,
 
@@ -145,4 +148,26 @@ export const useTabStore = create<TabStore>((set, get) => ({
     const { tabs, activeTabId } = get()
     return tabs.find((t) => t.id === activeTabId)
   },
-}))
+    }),
+    {
+      name: 'claude-code-pro:tabs',
+      storage: createJSONStorage(() => localStorage),
+      // Only persist the serializable parts. Terminal tabs rehydrate
+      // with a fresh pty spawned at the same cwd when the component
+      // mounts; editor tabs keep their last-seen content + dirty flag.
+      partialize: (state) => ({
+        tabs: state.tabs,
+        activeTabId: state.activeTabId,
+      }),
+      // After rehydration, bump the id counter past anything we just
+      // loaded so newly created tabs can't collide with persisted ids.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        for (const t of state.tabs) {
+          const match = t.id.match(/^tab-\d+-(\d+)$/)
+          if (match) counter = Math.max(counter, parseInt(match[1], 10))
+        }
+      },
+    },
+  ),
+)
