@@ -37,7 +37,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron
-        run: npx electron-rebuild -f -w node-pty
+        run: npx electron-rebuild -f
 
       - name: Build (Vite + tsc)
         run: npm run build

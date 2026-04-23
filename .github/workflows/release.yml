@@ -38,7 +38,11 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules for Electron
-        run: npx electron-rebuild -f -w node-pty
+        # Rebuild all native deps (node-pty, bufferutil, utf-8-validate, …)
+        # against Electron's Node ABI. -w only-pty leaves bufferutil at the
+        # CI runner's ABI, which causes "h.mask is not a function" crashes
+        # whenever the ws package sends a masked frame.
+        run: npx electron-rebuild -f
 
       - name: Build
         run: npm run build
