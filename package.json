@@ -1,6 +1,6 @@
 {
   "name": "claude-code-pro",
-  "version": "0.2.0-rc.2",
+  "version": "0.3.0-rc.1",
   "description": "A multi-workspace desktop client for Claude Code CLI — file tree, parallel terminals, drag-and-drop file paths",
   "author": "",
   "license": "MIT",
