@@ -32,7 +32,15 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['node-pty'],
+              // Must stay external: either native addons vite can't bundle
+              // (node-pty) or optional native ws addons. When vite bundles
+              // `ws`'s optional `require('bufferutil')` it replaces the
+              // import with an EMPTY STUB module, which bypasses ws's
+              // try/catch fallback and crashes mid-frame with
+              // "h.mask is not a function". Keeping them external means
+              // runtime `require` throws (packages aren't installed) and
+              // ws correctly falls back to its pure-JS implementation.
+              external: ['node-pty', 'bufferutil', 'utf-8-validate'],
             },
           },
         },

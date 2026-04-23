@@ -14,6 +14,16 @@ import type {
 // the reference schema; the shape below is a slight evolution that tracks
 // what the backend actually emits.
 
+// tsnet-sidecar registers each instance under this hostname prefix
+// (see electron/remote/tsnet-bridge.ts defaultHostname). We use it to
+// distinguish claude-code-pro devices from the rest of the user's tailnet
+// (phones, routers, other servers) — those don't run our mesh-server on
+// port 4242, so connecting to them would just ECONNREFUSED.
+export const CLAUDE_CODE_PRO_HOSTNAME_PREFIX = 'claude-code-pro-'
+export function isClaudeCodePeer(peer: MeshPeer): boolean {
+  return peer.name.startsWith(CLAUDE_CODE_PRO_HOSTNAME_PREFIX)
+}
+
 export interface Share {
   shareId: string
   tabId: string

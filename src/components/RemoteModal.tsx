@@ -13,7 +13,7 @@ import {
   LogOut,
   ShieldAlert,
 } from 'lucide-react'
-import { useRemoteStore, type Share } from '../stores/remoteStore'
+import { useRemoteStore, isClaudeCodePeer, type Share } from '../stores/remoteStore'
 import { useTabStore, type Tab } from '../stores/tabStore'
 import type { MeshPeer, RemoteTabInfo } from '../types'
 
@@ -511,48 +511,59 @@ function MeshTab({
 
       <div className="border-t border-[#3c3c3c]" />
 
-      {/* My Devices */}
-      <div className="space-y-2">
-        <div className="text-[12.5px] text-white font-medium">
-          My Devices{' '}
-          <span className="text-gray-500 font-normal">({mesh.peers.length})</span>
-        </div>
-        {mesh.peers.length === 0 ? (
-          <div className="text-[12px] text-gray-500 italic">
-            No other devices yet. Sign in to the same Tailscale account on another device to link them.
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {mesh.peers.map((peer) => (
-              <div
-                key={peer.name}
-                className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-panel-hover"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-                      peer.online ? 'bg-green-500' : 'bg-gray-500'
-                    }`}
-                  />
-                  <span className="text-[12.5px] text-gray-200 truncate">{peer.name}</span>
-                  {!peer.online && (
-                    <span className="text-[10.5px] text-gray-500">offline</span>
-                  )}
-                </div>
-                {peer.online && (
-                  <button
-                    onClick={() => handleConnectPeer(peer)}
-                    className="shrink-0 text-[11.5px] text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/10"
-                    title="Connect to peer"
-                  >
-                    → Connect
-                  </button>
-                )}
+      {/* My Devices — only show peers running claude-code-pro (hostname prefix). */}
+      {(() => {
+        const appPeers = mesh.peers.filter(isClaudeCodePeer)
+        const hiddenCount = mesh.peers.length - appPeers.length
+        return (
+          <div className="space-y-2">
+            <div className="text-[12.5px] text-white font-medium">
+              My Devices{' '}
+              <span className="text-gray-500 font-normal">({appPeers.length})</span>
+            </div>
+            {appPeers.length === 0 ? (
+              <div className="text-[12px] text-gray-500 italic">
+                No other claude-code-pro devices yet. Install and join on another device with the same Tailscale account.
               </div>
-            ))}
+            ) : (
+              <div className="space-y-1">
+                {appPeers.map((peer) => (
+                  <div
+                    key={peer.name}
+                    className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-panel-hover"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                          peer.online ? 'bg-green-500' : 'bg-gray-500'
+                        }`}
+                      />
+                      <span className="text-[12.5px] text-gray-200 truncate">{peer.name}</span>
+                      {!peer.online && (
+                        <span className="text-[10.5px] text-gray-500">offline</span>
+                      )}
+                    </div>
+                    {peer.online && (
+                      <button
+                        onClick={() => handleConnectPeer(peer)}
+                        className="shrink-0 text-[11.5px] text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/10"
+                        title="Connect to peer"
+                      >
+                        → Connect
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {hiddenCount > 0 && (
+              <div className="text-[10.5px] text-gray-600 italic">
+                {hiddenCount} other tailnet device{hiddenCount > 1 ? 's' : ''} hidden (not running claude-code-pro)
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        )
+      })()}
 
       <div className="border-t border-[#3c3c3c]" />
 

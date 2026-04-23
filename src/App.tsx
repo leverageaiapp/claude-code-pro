@@ -24,7 +24,7 @@ import { DebugPanel } from './components/DebugPanel'
 import { RemoteModal, type RemoteModalTab } from './components/RemoteModal'
 import { ToastStack } from './components/ToastStack'
 import { useActivityStore } from './stores/activityStore'
-import { useRemoteStore } from './stores/remoteStore'
+import { useRemoteStore, isClaudeCodePeer } from './stores/remoteStore'
 import { Bug } from 'lucide-react'
 import type { MeshPeer, RemoteTabInfo } from './types'
 
@@ -551,6 +551,10 @@ function MyDevicesSection({
   onPeerClick: (peer: MeshPeer) => void
 }) {
   const [expanded, setExpanded] = useState(true)
+  // Only show peers that look like claude-code-pro nodes; hide the rest of
+  // the user's tailnet (phones, routers, other servers) which would
+  // ECONNREFUSED on port 4242.
+  const appPeers = peers.filter(isClaudeCodePeer)
   return (
     <div className="border-b border-panel-border shrink-0">
       <button
@@ -560,16 +564,16 @@ function MyDevicesSection({
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Globe size={11} className="text-green-400" />
         <span>My Devices</span>
-        <span className="ml-auto text-gray-500 lowercase">({peers.length})</span>
+        <span className="ml-auto text-gray-500 lowercase">({appPeers.length})</span>
       </button>
       {expanded && (
         <div className="pb-1">
-          {peers.length === 0 ? (
+          {appPeers.length === 0 ? (
             <div className="px-3 py-1 text-[11px] text-gray-500 italic">
               No peers visible
             </div>
           ) : (
-            peers.map((peer) => (
+            appPeers.map((peer) => (
               <button
                 key={peer.name}
                 disabled={!peer.online}
