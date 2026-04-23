@@ -11,12 +11,15 @@ import {
   Terminal,
   FileCode,
   Circle,
+  Link2,
 } from 'lucide-react'
 import { useFileStore } from './stores/fileStore'
 import { useTabStore } from './stores/tabStore'
 import { useDebugStore, debug } from './stores/debugStore'
 import { DebugPanel } from './components/DebugPanel'
+import { RemoteModal } from './components/RemoteModal'
 import { useActivityStore } from './stores/activityStore'
+import { useRemoteStore } from './stores/remoteStore'
 import { Bug } from 'lucide-react'
 
 function App() {
@@ -28,7 +31,16 @@ function App() {
   const setDebugVisible = useDebugStore((s) => s.setVisible)
   const debugLogCount = useDebugStore((s) => s.logs.length)
 
+  const [remoteModalOpen, setRemoteModalOpen] = useState(false)
+  const remoteShareCount = useRemoteStore((s) => s.tunnel.shares.length)
+
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  // On mount: populate remote state from the backend (tunnel status + any
+  // shares that survived a renderer reload).
+  useEffect(() => {
+    useRemoteStore.getState().refreshStatus()
+  }, [])
 
   // Register debug log listener (from main process)
   useEffect(() => {
@@ -176,6 +188,22 @@ function App() {
 
         <div className="flex items-center gap-1">
           <button
+            onClick={() => setRemoteModalOpen(true)}
+            className={`titlebar-no-drag relative p-1.5 rounded transition-colors ${
+              remoteShareCount > 0
+                ? 'bg-blue-600/30 text-blue-300'
+                : 'hover:bg-[#555] text-gray-400'
+            }`}
+            title="Share terminal via link"
+          >
+            <Link2 size={14} />
+            {remoteShareCount > 0 && (
+              <span className="absolute -top-[2px] -right-[2px] min-w-[14px] h-[14px] px-[3px] bg-blue-500 text-white text-[9px] font-mono font-semibold rounded-full flex items-center justify-center leading-none">
+                {remoteShareCount}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setDebugVisible(!debugVisible)}
             className={`titlebar-no-drag p-1.5 rounded transition-colors flex items-center gap-1 ${
               debugVisible ? 'bg-orange-600/30 text-orange-400' : 'hover:bg-[#555] text-gray-400'
@@ -292,6 +320,7 @@ function App() {
       </div>
 
       <DebugPanel />
+      <RemoteModal open={remoteModalOpen} onClose={() => setRemoteModalOpen(false)} />
 
       {/* Status Bar */}
       <div className="h-6 flex items-center justify-between px-3 bg-[#007acc] text-white text-[11px] shrink-0">
