@@ -11,14 +11,17 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:sidecar": "bash native/tsnet-sidecar/build-all.sh",
+    "build:sidecar:current": "SIDECAR_ONLY_CURRENT=1 bash native/tsnet-sidecar/build-all.sh",
+    "build": "npm run build:sidecar:current && tsc && vite build",
+    "build:full": "npm run build:sidecar && tsc && vite build",
     "preview": "vite preview",
     "postinstall": "electron-builder install-app-deps && node scripts/copy-excalidraw-fonts.js",
     "rebuild:pty": "electron-rebuild -f -w node-pty",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist": "npm run build:full && electron-builder",
+    "dist:mac": "npm run build:full && electron-builder --mac",
+    "dist:win": "npm run build:full && electron-builder --win",
+    "dist:linux": "npm run build:full && electron-builder --linux"
   },
   "build": {
     "appId": "app.leverageai.claude-code-pro",
@@ -35,6 +38,15 @@
       "node_modules/node-pty/**",
       "node_modules/cloudflared/**"
     ],
+    "extraResources": [
+      {
+        "from": "native/tsnet-sidecar/build/${os}-${arch}/",
+        "to": "tsnet-sidecar/${os}-${arch}/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "mac": {
       "target": [
         {
@@ -47,7 +59,11 @@
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "identity": null
+      "identity": null,
+      "binaries": [
+        "Contents/Resources/tsnet-sidecar/darwin-arm64/tsnet-sidecar",
+        "Contents/Resources/tsnet-sidecar/darwin-amd64/tsnet-sidecar"
+      ]
     },
     "dmg": {
       "writeUpdateInfo": false
