@@ -618,16 +618,24 @@ Off ──[Join tailnet]──▶ Client ──[Enable Host]──▶ Host
 | `input` | → | `{ type, tabId, data }` |
 | `resize` | → | `{ type, tabId, cols, rows }` |
 | `sync` | → | `{ type, tabId, lastSeq }` |
-| `history` / `history-delta` | ← | `{ type, tabId, data[], lastSeq }` |
-| `tab:created` / `tab:closed` | ← | `{ type, tab }` host 通知新建 / 关闭 |
+| `history` / `history-delta` | ← | `{ type, tabId, data[], lastSeq, truncated? }` |
+| `exit` | ← | `{ type, tabId, code }` PTY 退出。重连时若 tab 已退出，history/delta 之后立即补发一条 |
+| `tab:created` / `tab:closed` | ← | `{ type, tab }` host 通知新建 / 关闭（Mesh 多 tab 面） |
 | `tab:new` | → | `{ type, cwd?, command? }` 请求 host 新建 tab（仅 mesh 面） |
 | `tab:close-on-host` | → | `{ type, tabId }` 请求 host kill 此 tab 的 PTY（二次确认） |
+
+**v0 Tunnel 面的简化约定**（每个 share 绑定单 Tab）：
+
+- 会话消息可省略 `tabId` 字段（share 已隐式绑定 tab）
+- 客户端发送的 `resize` 被服务端忽略——本地渲染进程是 PTY 尺寸权威，远程访客不应争抢
+- `tabs:list` / `tab:subscribe` / `tab:unsubscribe` / `tab:new` / `tab:close-on-host` 在 Tunnel 面不使用；v1 Mesh 多 tab 场景才启用
 
 **缓冲与历史**：
 
 - 每个 Tab 独立环形 buffer，**上限 5000 条 chunk** / tab
 - 10 tab 满载约 12MB 内存，可控
 - 长跑会话（如 claude 输出几万行）：超过缓冲后较早的输出会被冲掉，断线重连只能拿到缓冲范围内的 delta。这是**预期行为**，UI 要在历史被冲时给一条灰色分隔线"(earlier output not retained)"
+- **PTY 退出后的重连**：tab 退出时 buffer 不立即释放，保留为"墓碑"，新连上的客户端通过 sync 仍能拿到历史；发送 history/history-delta 后立即补一条 `exit` 消息，避免客户端陷入"无数据、无结束"的僵尸状态
 
 ### 6.2 Mesh 面 vs Tunnel 面的差异
 
@@ -1056,13 +1064,17 @@ interface Peer {
 
 interface Share {
   shareId: string
-  token: string   // 仅存 UI 侧用于显示完整 URL，不持久化（重启后失效）
   tabId: string
-  tabTitle: string
   createdAt: number
   connectedClients: number
+  url: string  // 完整可分享 URL（含 token）；仅在 create 时得到，重启后为空字符串
 }
 ```
+
+**v0 实现注记**：
+- `url` 字段替代了原设计中的 `token` —— token 仅在 `remote:share:create` 调用返回值里出现一次，随后只保留整条 URL，避免渲染进程长期持有裸 token
+- `tabTitle` 不在 store 里冗余保存，UI 按需从 `tabStore.tabById(tabId)` 解析
+- 应用重启后 `remoteStore` 清空，通过 `refreshStatus()` 重新从主进程拉 `list()`——但 `list()` 不返回 URL，所以 UI 把这些"孤儿 share"标为"URL 不可用，请 Stop 后重新分享"
 
 `tunnel.shares` 不 persist（应用重启 shares 失效，cloudflared URL 每次重启也变）。`mesh.trustedPeers` 和 `toasts.remoteTabCloseMuted` persist。
 
