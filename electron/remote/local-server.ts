@@ -353,11 +353,19 @@ export class LocalServer {
           const delta = this.fanout.buffer.getDelta(share.tabId, lastSeq)
           if (delta) {
             send({ type: 'history-delta', data: delta.data, lastSeq: delta.lastSeq, truncated: delta.truncated })
+            const exit = this.fanout.buffer.getExit(share.tabId)
+            if (exit) {
+              send({ type: 'exit', code: exit.code })
+            }
             return
           }
         }
         const history = this.fanout.buffer.getHistory(share.tabId)
         send({ type: 'history', data: history.data, lastSeq: history.lastSeq, truncated: history.truncated })
+        const exit = this.fanout.buffer.getExit(share.tabId)
+        if (exit) {
+          send({ type: 'exit', code: exit.code })
+        }
         return
       }
 

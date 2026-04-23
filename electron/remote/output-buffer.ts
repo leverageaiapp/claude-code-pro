@@ -7,6 +7,7 @@ interface TabBuffer {
   entries: BufferEntry[]
   nextSeq: number
   totalDropped: number
+  exitCode: number | null
 }
 
 const MAX_BUFFER_SIZE = 5000
@@ -27,7 +28,7 @@ export class OutputBuffer {
   private getOrCreate(tabId: string): TabBuffer {
     let buf = this.tabs.get(tabId)
     if (!buf) {
-      buf = { entries: [], nextSeq: 1, totalDropped: 0 }
+      buf = { entries: [], nextSeq: 1, totalDropped: 0, exitCode: null }
       this.tabs.set(tabId, buf)
     }
     return buf
@@ -83,6 +84,28 @@ export class OutputBuffer {
   }
 
   dropTab(tabId: string): void {
+    this.tabs.delete(tabId)
+  }
+
+  // Mark a tab as exited but keep its buffer around so late-joining clients
+  // can still fetch history + the exit code. TODO: tombstones should be GC'd
+  // eventually (e.g. when the share is stopped and no other share references
+  // the tab). For v0 we leave them; total memory is bounded by MAX_BUFFER_SIZE
+  // entries times the number of dead tabs.
+  markExit(tabId: string, code: number): void {
+    const buf = this.getOrCreate(tabId)
+    buf.exitCode = code
+  }
+
+  getExit(tabId: string): { code: number } | null {
+    const buf = this.tabs.get(tabId)
+    if (!buf || buf.exitCode === null) return null
+    return { code: buf.exitCode }
+  }
+
+  // Hard-delete the tab buffer. Not called in v0; reserved for a future
+  // tombstone GC pass.
+  gcTab(tabId: string): void {
     this.tabs.delete(tabId)
   }
 }

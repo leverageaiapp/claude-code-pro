@@ -54,7 +54,9 @@ export class PtyFanout {
         listener(code)
       }
       this.tabs.delete(tabId)
-      this.buffer.dropTab(tabId)
+      // Tombstone the buffer instead of dropping it, so clients that
+      // reconnect after PTY exit can still fetch history + see the exit.
+      this.buffer.markExit(tabId, code)
     })
 
     entry.dispose = () => {
@@ -78,6 +80,12 @@ export class PtyFanout {
   subscribe(tabId: string, onData: FanoutListener, onExit: ExitListener): () => void {
     const entry = this.tabs.get(tabId)
     if (!entry) {
+      // Tab is gone. If we have a tombstoned exit, fire it so the caller's
+      // exit pipeline runs the same way it would for a live-then-exited tab.
+      const exit = this.buffer.getExit(tabId)
+      if (exit) {
+        queueMicrotask(() => onExit(exit.code))
+      }
       return () => {}
     }
     entry.dataListeners.add(onData)
