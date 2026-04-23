@@ -85,6 +85,7 @@ export class LocalServer {
   private pingInterval: ReturnType<typeof setInterval> | null = null
   private started = false
   private startPromise: Promise<void> | null = null
+  private shutdownPromise: Promise<void> | null = null
   private eventListeners = new Set<(evt: ShareEvent) => void>()
 
   constructor(
@@ -182,6 +183,12 @@ export class LocalServer {
   }
 
   private async ensureStarted(): Promise<void> {
+    // If a shutdown is in flight, wait for it to fully unwind before we
+    // decide whether to (re-)start. Otherwise we could mark `started=true`
+    // while the httpServer is mid-close.
+    if (this.shutdownPromise) {
+      await this.shutdownPromise
+    }
     if (this.started) return
     if (this.startPromise) return this.startPromise
 
@@ -482,27 +489,37 @@ export class LocalServer {
   }
 
   async shutdown(): Promise<void> {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval)
-      this.pingInterval = null
-    }
-    if (this.wss) {
-      for (const c of this.wss.clients) {
-        try {
-          c.close()
-        } catch {
-          // ignore
-        }
+    if (this.shutdownPromise) return this.shutdownPromise
+
+    this.shutdownPromise = (async () => {
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval)
+        this.pingInterval = null
       }
-      await new Promise<void>((resolve) => this.wss!.close(() => resolve()))
-      this.wss = null
+      if (this.wss) {
+        for (const c of this.wss.clients) {
+          try {
+            c.close()
+          } catch {
+            // ignore
+          }
+        }
+        await new Promise<void>((resolve) => this.wss!.close(() => resolve()))
+        this.wss = null
+      }
+      if (this.httpServer) {
+        await new Promise<void>((resolve) => this.httpServer!.close(() => resolve()))
+        this.httpServer = null
+      }
+      this.started = false
+      this.startPromise = null
+      this.port = 0
+    })()
+
+    try {
+      await this.shutdownPromise
+    } finally {
+      this.shutdownPromise = null
     }
-    if (this.httpServer) {
-      await new Promise<void>((resolve) => this.httpServer!.close(() => resolve()))
-      this.httpServer = null
-    }
-    this.started = false
-    this.startPromise = null
-    this.port = 0
   }
 }

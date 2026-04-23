@@ -57,13 +57,18 @@ export function registerRemoteIpc(fanout: PtyFanout, getMainWindow: () => Browse
     cancelTunnelShutdown()
     tunnelShutdownTimer = setTimeout(() => {
       tunnelShutdownTimer = null
-      if (!server.hasShares() && isTunnelRunning()) {
+      // Re-check hasShares right before tearing anything down: a new
+      // remote:share:create may have raced in after the timer was scheduled
+      // but before it fired, and we don't want to add its share to a dying
+      // server.
+      if (server.hasShares()) {
+        return
+      }
+      if (isTunnelRunning()) {
         stopTunnel()
         emit({ type: 'tunnel:stopped' })
       }
-      if (!server.hasShares()) {
-        void server.shutdown()
-      }
+      void server.shutdown()
     }, TUNNEL_IDLE_SHUTDOWN_MS)
   }
 
