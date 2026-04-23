@@ -43,10 +43,8 @@ export function RemoteTerminalPanel({ tab, isActive }: Props) {
   const [peerExited, setPeerExited] = useState<{ code: number } | null>(null)
   const [killConfirm, setKillConfirm] = useState(false)
   const updateRemoteTabStatus = useTabStore((s) => s.updateRemoteTabStatus)
-  const closeRemoteTab = useRemoteStore((s) => s.closeRemoteTab)
   const killRemoteTab = useRemoteStore((s) => s.killRemoteTab)
   const pushToast = useRemoteStore((s) => s.pushToast)
-  const remoteTabCloseMuted = useRemoteStore((s) => s.toasts.remoteTabCloseMuted)
   const peers = useRemoteStore((s) => s.mesh.peers)
 
   // Derive peer IP for the status bar. Purely cosmetic — if we can't find it,
