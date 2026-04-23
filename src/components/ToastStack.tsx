@@ -2,9 +2,9 @@
 // `remoteStore.toastQueue`. Renders in a fixed top-right container and
 // handles the interactive patterns from REMOTE_NETWORKING.md §8.6:
 //
-//   ① peer-first-connect: [知道了] [断开此设备 (v2 TODO)] □ 此设备不再提示
-//   ② remote-tab-closed:  [知道了] □ 不再提示
-//   ③ version-mismatch:    [知道了] [查看文档]
+//   ① peer-first-connect: [Got it] [Disconnect device (v2 TODO)] [ ] Don't show this device again
+//   ② remote-tab-closed:  [Got it] [ ] Don't show again
+//   ③ version-mismatch:    [Got it] [View docs]
 //   ④ reconnecting:        auto-dismiss
 //
 // Toasts themselves live in the store as `ToastMessage` records, pushed
@@ -102,16 +102,16 @@ function ToastCard({
             onClick={handleDismiss}
             className="px-2 py-0.5 text-[11.5px] text-white bg-blue-600 hover:bg-blue-700 rounded"
           >
-            知道了
+            Got it
           </button>
-          {/* 断开此设备: v2 — backend has no kickPeer yet. Shown disabled
+          {/* Disconnect device: v2 — backend has no kickPeer yet. Shown disabled
               with a tooltip so users know it's coming. */}
           <button
             disabled
             title="v2: backend kickPeer not implemented"
             className="px-2 py-0.5 text-[11.5px] text-gray-500 bg-[#2a2a2a] rounded cursor-not-allowed"
           >
-            断开此设备
+            Disconnect device
           </button>
           <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer">
             <input
@@ -120,7 +120,7 @@ function ToastCard({
               onChange={(e) => setDontShow(e.target.checked)}
               className="accent-blue-500"
             />
-            此设备不再提示
+            Don't show this device again
           </label>
           {toast.peerName && (
             <div className="w-full text-[10.5px] text-gray-600 pt-1">
@@ -138,7 +138,7 @@ function ToastCard({
             onClick={handleDismiss}
             className="px-2 py-0.5 text-[11.5px] text-white bg-blue-600 hover:bg-blue-700 rounded"
           >
-            知道了
+            Got it
           </button>
           <label className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 cursor-pointer">
             <input
@@ -147,7 +147,7 @@ function ToastCard({
               onChange={(e) => setDontShow(e.target.checked)}
               className="accent-blue-500"
             />
-            不再提示
+            Don't show again
           </label>
         </div>
       )}
@@ -158,7 +158,7 @@ function ToastCard({
             onClick={handleDismiss}
             className="px-2 py-0.5 text-[11.5px] text-white bg-blue-600 hover:bg-blue-700 rounded"
           >
-            知道了
+            Got it
           </button>
           <button
             onClick={() => {
@@ -166,7 +166,7 @@ function ToastCard({
             }}
             className="px-2 py-0.5 text-[11.5px] text-gray-200 bg-[#2a2a2a] hover:bg-[#333] rounded flex items-center gap-1"
           >
-            查看文档 <ExternalLink size={10} />
+            View docs <ExternalLink size={10} />
           </button>
         </div>
       )}

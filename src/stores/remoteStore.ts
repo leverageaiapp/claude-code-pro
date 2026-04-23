@@ -56,7 +56,7 @@ interface MeshState {
   authUrl: string | null
   peers: MeshPeer[]
   // Peers (by synthetic peer id from `peer_first_connect`) for which the
-  // user ticked "不再提示" / "don't show again" on the host-mode toast.
+  // user ticked "Don't show again" on the host-mode toast.
   trustedPeers: string[]
   // In-memory outbound sessions. Plain object for easy serialization /
   // reactivity in Zustand (Map is awkward under structural updates).
@@ -609,8 +609,8 @@ if (
         if (state.mesh.trustedPeers.includes(event.peerName)) break
         state.pushToast({
           kind: 'peer-first-connect',
-          title: `${event.peerName} 已连接`,
-          body: '现在可查看你的 Tab 并输入命令。',
+          title: `${event.peerName} connected`,
+          body: 'They can now view your tabs and type commands.',
           peerName: event.peerName,
         })
         break
@@ -631,8 +631,8 @@ if (
       case 'crashed': {
         useRemoteStore.getState().pushToast({
           kind: 'reconnecting',
-          title: 'Mesh 重连中...',
-          body: 'sidecar 退出，将自动重启。',
+          title: 'Mesh reconnecting…',
+          body: 'Sidecar exited; restarting automatically.',
           ttlMs: 6000,
         })
         break
@@ -645,13 +645,13 @@ if (
         if (/version_mismatch/i.test(msg) || event.code === 'version_mismatch') {
           useRemoteStore.getState().pushToast({
             kind: 'version-mismatch',
-            title: '远程设备版本不兼容',
-            body: '对端 claude-code-pro 版本过旧，请双方升级到最新版。',
+            title: 'Peer version incompatible',
+            body: "The peer's claude-code-pro is too old. Upgrade both ends to the latest.",
           })
         } else {
           useRemoteStore.getState().pushToast({
             kind: 'error',
-            title: 'Mesh 错误',
+            title: 'Mesh error',
             body: msg,
             ttlMs: 8000,
           })

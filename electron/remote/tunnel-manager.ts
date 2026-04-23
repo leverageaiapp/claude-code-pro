@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
+import * as path from 'path'
 import { bin as cloudflaredBin, install as installCloudflared } from 'cloudflared'
 
 let tunnelProcess: ChildProcess | null = null
@@ -12,11 +13,28 @@ let startPromise: Promise<string> | null = null
 const intentionalStops = new WeakSet<ChildProcess>()
 const sigkillTimers = new WeakMap<ChildProcess, ReturnType<typeof setTimeout>>()
 
+// In a packaged Electron app, `cloudflaredBin` points at
+// .../app.asar/node_modules/cloudflared/bin/cloudflared. asarUnpack
+// actually extracts the file to app.asar.unpacked alongside. Electron's
+// fs shim pretends the asar path exists, but child_process.spawn bypasses
+// that shim and ENOTDIRs when it tries to exec a file that lives inside
+// the asar blob. Rewrite to the unpacked path.
+function resolveRealBinary(p: string): string {
+  return p.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+}
+
 async function ensureCloudflared(): Promise<string> {
-  if (fs.existsSync(cloudflaredBin)) {
-    return cloudflaredBin
+  const resolved = resolveRealBinary(cloudflaredBin)
+  if (fs.existsSync(resolved)) {
+    return resolved
   }
-  await installCloudflared(cloudflaredBin)
+  // Not unpacked (dev path or missing) — fall back to the original and
+  // trigger install if the file is genuinely absent.
+  if (!fs.existsSync(cloudflaredBin)) {
+    await installCloudflared(cloudflaredBin)
+  }
+  // Recheck unpacked path first, then original.
+  if (fs.existsSync(resolved)) return resolved
   return cloudflaredBin
 }
 

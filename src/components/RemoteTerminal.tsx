@@ -324,18 +324,18 @@ export function RemoteTerminalPanel({ tab, isActive }: Props) {
             <div className="flex items-center gap-2">
               <ShieldAlert size={18} className="text-red-400" />
               <span className="text-sm font-semibold text-white">
-                终止 {tab.peerHostname} 上的 "{tab.title}"？
+                Kill "{tab.title}" on {tab.peerHostname}?
               </span>
             </div>
             <div className="text-[12.5px] text-gray-300">
-              此操作会在远端 kill 这个 PTY 进程，所有未保存的会话状态将丢失。
+              This will terminate the PTY on the host. Any unsaved session state will be lost.
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button
                 onClick={() => setKillConfirm(false)}
                 className="px-3 py-1.5 text-[12px] text-gray-300 hover:bg-panel-hover rounded"
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={handleCloseOnHost}
@@ -374,8 +374,8 @@ export function destroyRemoteTerminal(
     if (!store.toasts.remoteTabCloseMuted) {
       store.pushToast({
         kind: 'remote-tab-closed',
-        title: 'Remote Tab 已关闭',
-        body: '此终端仍在远端上运行，可随时重新连接查看。',
+        title: 'Remote tab closed',
+        body: 'The terminal is still running on the host. Reconnect anytime.',
       })
     }
   }

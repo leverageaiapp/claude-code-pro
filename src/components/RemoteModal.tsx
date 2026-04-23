@@ -69,17 +69,17 @@ function HostConfirmDialog({ open, onCancel, onConfirm }: HostConfirmProps) {
       >
         <div className="flex items-center gap-2">
           <ShieldAlert size={18} className="text-amber-400" />
-          <span className="text-sm font-semibold text-white">启用 Host 模式？</span>
+          <span className="text-sm font-semibold text-white">Enable Host mode?</span>
         </div>
         <div className="text-[12.5px] text-gray-300 space-y-2">
-          <p>启用后，你 Tailscale 账户下的所有设备都能：</p>
+          <p>Once enabled, every device on your Tailscale account will be able to:</p>
           <ul className="list-disc pl-5 space-y-0.5 text-gray-400">
-            <li>查看此机器上所有已打开的 Tab</li>
-            <li>输入命令（等同于在此机器本地键盘输入）</li>
-            <li>新开终端并执行任意命令</li>
+            <li>See every tab open on this machine</li>
+            <li>Type commands (same effect as typing on this machine's keyboard)</li>
+            <li>Open new terminals and run arbitrary commands</li>
           </ul>
           <p className="text-amber-300/90">
-            这等于把此机器的 shell 权限授予 tailnet 内所有设备。只在你信任自己的所有设备时启用。
+            This grants shell access on this machine to all devices in your tailnet. Only enable this if you trust all your own devices.
           </p>
         </div>
         <div className="flex justify-end gap-2 pt-1">
@@ -87,13 +87,13 @@ function HostConfirmDialog({ open, onCancel, onConfirm }: HostConfirmProps) {
             onClick={onCancel}
             className="px-3 py-1.5 text-[12px] text-gray-300 hover:bg-panel-hover rounded transition-colors"
           >
-            取消
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 text-[12px] text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors"
           >
-            我理解，启用
+            I understand, enable
           </button>
         </div>
       </div>
@@ -125,7 +125,7 @@ function PickPeerTabDialog({ open, peerHostname, tabs, error, onCancel, onPick }
           <div className="flex items-center gap-2">
             <Globe size={14} className="text-green-400" />
             <span className="text-sm font-semibold text-white">
-              {peerHostname} · 选择要打开的 Tab
+              {peerHostname} · pick a tab to open
             </span>
           </div>
           <button
@@ -143,11 +143,11 @@ function PickPeerTabDialog({ open, peerHostname, tabs, error, onCancel, onPick }
             </div>
           ) : tabs === null ? (
             <div className="text-[12px] text-gray-500 italic py-3 text-center">
-              加载中…
+              Loading…
             </div>
           ) : tabs.length === 0 ? (
             <div className="text-[12px] text-gray-500 italic py-3 text-center">
-              此设备当前没有开放的 Tab
+              No tabs currently open on this device
             </div>
           ) : (
             tabs.map((t) => (
@@ -323,23 +323,25 @@ function MeshTab({
         </div>
         <div className="text-[12.5px] text-gray-400 space-y-2">
           <p>
-            把这台机器加入你的 Tailscale tailnet，就能和你账户下的其他设备互联，端到端加密
-            （WireGuard）直连，不经过第三方服务器中继数据。
+            Join this machine to your Tailscale tailnet to mesh with the other devices on your
+            account. Traffic is end-to-end encrypted (WireGuard) and peer-to-peer — it does
+            not pass through a third-party relay.
           </p>
           <p>
-            首次加入时会打开浏览器让你登录 Tailscale 账户。之后除非你点击 Leave，否则启动时自动加入。
+            The first time you join, a browser tab opens for Tailscale login. Afterwards the
+            app rejoins automatically on startup unless you click Leave.
           </p>
         </div>
 
         {/* Advanced: device name + custom control URL even before first join. */}
         <div className="space-y-2">
-          <div className="text-[11px] uppercase text-gray-500">设备名</div>
+          <div className="text-[11px] uppercase text-gray-500">Device name</div>
           <input
             type="text"
             value={draftDeviceName}
             onChange={(e) => setDraftDeviceName(e.target.value)}
             onBlur={() => setDeviceName(draftDeviceName.trim())}
-            placeholder="自动 (hostname)"
+            placeholder="Auto (hostname)"
             className="w-full bg-[#2a2a2a] border border-[#3c3c3c] text-white text-[12px] rounded px-2 py-1.5 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -349,7 +351,7 @@ function MeshTab({
           disabled={joinPending}
           className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900 disabled:text-gray-400 text-white text-[13px] rounded-md transition-colors"
         >
-          {joinPending ? '连接中…' : '加入 tailnet'}
+          {joinPending ? 'Connecting…' : 'Join tailnet'}
         </button>
 
         {joinError && (
@@ -359,7 +361,7 @@ function MeshTab({
         )}
 
         <div className="text-[11px] text-gray-500 text-center pt-1">
-          Powered by Tailscale · 端到端加密 · 不经 Cloudflare
+          Powered by Tailscale · end-to-end encrypted · no Cloudflare in the path
         </div>
       </section>
     )
@@ -385,7 +387,7 @@ function MeshTab({
       {/* Auth URL, if pending */}
       {needsLogin && mesh.authUrl && (
         <div className="text-[12px] text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2 space-y-2">
-          <div>请在浏览器里完成 Tailscale 登录以激活此设备：</div>
+          <div>Finish Tailscale login in your browser to activate this device:</div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -397,7 +399,7 @@ function MeshTab({
               }}
               className="px-3 py-1 text-[11.5px] bg-amber-600 hover:bg-amber-700 text-white rounded"
             >
-              打开登录链接
+              Open login link
             </button>
             <button
               onClick={() => {
@@ -405,7 +407,7 @@ function MeshTab({
               }}
               className="px-2 py-1 text-[11.5px] text-gray-300 hover:bg-panel-hover rounded"
             >
-              复制 URL
+              Copy URL
             </button>
           </div>
           <div className="font-mono text-[10.5px] text-gray-400 break-all">{mesh.authUrl}</div>
@@ -426,17 +428,17 @@ function MeshTab({
           />
           <span className="text-[12.5px] text-gray-200 font-medium">
             {isRunning
-              ? '已加入 tailnet'
+              ? 'Joined tailnet'
               : isStarting
-                ? '连接中…'
+                ? 'Connecting…'
                 : needsLogin
-                  ? '等待登录'
-                  : '未加入'}
+                  ? 'Waiting for login'
+                  : 'Not joined'}
           </span>
         </div>
         {/* Device name (inline editor) */}
         <div className="flex items-center gap-2 text-[12px] text-gray-400">
-          <span className="text-gray-500">设备名:</span>
+          <span className="text-gray-500">Device name:</span>
           {editingDeviceName ? (
             <>
               <input
@@ -457,7 +459,7 @@ function MeshTab({
                 onClick={handleSaveDeviceName}
                 className="text-[11px] text-blue-400 hover:text-blue-300"
               >
-                保存
+                Save
               </button>
             </>
           ) : (
@@ -466,7 +468,7 @@ function MeshTab({
               <button
                 onClick={() => setEditingDeviceName(true)}
                 className="p-0.5 hover:bg-panel-hover rounded text-gray-500"
-                title="重命名（需要重启 sidecar）"
+                title="Rename (requires sidecar restart)"
               >
                 <Pencil size={10} />
               </button>
@@ -486,9 +488,9 @@ function MeshTab({
       {/* Host mode */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="text-[12.5px] text-white font-medium">Host 模式</div>
+          <div className="text-[12.5px] text-white font-medium">Host mode</div>
           <div className="text-[11.5px] text-gray-500 mt-0.5">
-            允许其他设备连接并操作此机器上的 Tab
+            Allow other devices to connect and operate tabs on this machine
           </div>
         </div>
         <button
@@ -517,7 +519,7 @@ function MeshTab({
         </div>
         {mesh.peers.length === 0 ? (
           <div className="text-[12px] text-gray-500 italic">
-            尚未发现其他设备。在另一台设备上登录同一个 Tailscale 账户即可。
+            No other devices yet. Sign in to the same Tailscale account on another device to link them.
           </div>
         ) : (
           <div className="space-y-1">
@@ -543,7 +545,7 @@ function MeshTab({
                     className="shrink-0 text-[11.5px] text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/10"
                     title="Connect to peer"
                   >
-                    → 连接
+                    → Connect
                   </button>
                 )}
               </div>
@@ -563,7 +565,7 @@ function MeshTab({
             onChange={(e) => setAutoJoinOnStart(e.target.checked)}
             className="accent-blue-500"
           />
-          启动 app 时自动加入 tailnet
+          Auto-join tailnet on app start
         </label>
 
         <button
@@ -571,13 +573,13 @@ function MeshTab({
           className="flex items-center gap-1 text-[11.5px] text-gray-400 hover:text-gray-200"
         >
           {advancedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          高级：自定义 Coordination Server
+          Advanced: custom Coordination Server
         </button>
 
         {advancedOpen && (
           <div className="space-y-2 pl-4">
             <div className="text-[11px] text-gray-500">
-              默认使用 Tailscale 官方控制平面。仅在你跑自己的 headscale 时才需要填写；留空即用默认。
+              Defaults to Tailscale's official control plane. Only fill this in if you run your own headscale; leave empty for the default.
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -595,7 +597,7 @@ function MeshTab({
               </button>
             </div>
             <div className="text-[10.5px] text-amber-400">
-              修改后需要重启 sidecar — 会自动重连。
+              Changing this restarts the sidecar — it reconnects automatically.
             </div>
           </div>
         )}
@@ -610,10 +612,10 @@ function MeshTab({
           className="flex items-center gap-1.5 text-[12px] text-red-400 hover:text-red-300"
         >
           <LogOut size={12} />
-          立即撤销所有远程访问
+          Revoke all remote access
         </button>
         <div className="text-[10.5px] text-gray-500 pl-5">
-          关闭 Host、断开所有出站会话、离开 tailnet，并打开 Tailscale 管理台方便你删除其他设备。
+          Disables Host mode, closes all outbound sessions, leaves the tailnet, and opens the Tailscale admin console so you can remove the other devices.
         </div>
       </div>
 
@@ -627,7 +629,7 @@ function MeshTab({
           }
           className="underline hover:text-gray-400"
         >
-          帮助
+          Help
         </button>
       </div>
 
@@ -656,24 +658,24 @@ function MeshTab({
             <div className="flex items-center gap-2">
               <ShieldAlert size={18} className="text-red-400" />
               <span className="text-sm font-semibold text-white">
-                撤销所有远程访问？
+                Revoke all remote access?
               </span>
             </div>
             <div className="text-[12.5px] text-gray-300">
-              将关闭 Host 模式、断开所有已连对端、离开 tailnet，并在浏览器里打开 Tailscale 管理台方便你删除剩余设备。
+              This disables Host mode, closes all connected peers, leaves the tailnet, and opens the Tailscale admin console so you can remove the remaining devices.
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <button
                 onClick={() => setRevokeConfirmOpen(false)}
                 className="px-3 py-1.5 text-[12px] text-gray-300 hover:bg-panel-hover rounded"
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={handleRevokeAll}
                 className="px-3 py-1.5 text-[12px] text-white bg-red-600 hover:bg-red-700 rounded"
               >
-                撤销
+                Revoke
               </button>
             </div>
           </div>

@@ -176,7 +176,7 @@ function App() {
       if (!res.ok || !res.localSessionId) {
         pushToast({
           kind: 'error',
-          title: '无法打开远程 Tab',
+          title: 'Could not open remote tab',
           body: res.error ?? 'Unknown error',
           ttlMs: 6000,
         })
@@ -202,7 +202,7 @@ function App() {
       if (!connRes.ok || !connRes.sessionId) {
         pushToast({
           kind: 'error',
-          title: `无法连接到 ${peer.name}`,
+          title: `Could not connect to ${peer.name}`,
           body: connRes.error ?? 'Unknown error',
           ttlMs: 6000,
         })
@@ -213,7 +213,7 @@ function App() {
         await disconnectFromPeer(connRes.sessionId)
         pushToast({
           kind: 'error',
-          title: `${peer.name} 列出 Tab 失败`,
+          title: `Failed to list tabs on ${peer.name}`,
           body: tabsRes.error ?? 'Unknown error',
           ttlMs: 6000,
         })
@@ -224,8 +224,8 @@ function App() {
         await disconnectFromPeer(connRes.sessionId)
         pushToast({
           kind: 'info',
-          title: `${peer.name} 当前没有开放的 Tab`,
-          body: '对方需要开启 Host 模式并至少有一个终端 Tab。',
+          title: `${peer.name} has no open tabs`,
+          body: 'The peer needs Host mode enabled and at least one terminal tab open.',
           ttlMs: 6000,
         })
         return
