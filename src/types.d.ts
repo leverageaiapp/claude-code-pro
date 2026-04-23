@@ -89,6 +89,54 @@ interface ElectronAPI {
       }>
     }
     onEvent: (callback: (data: RemoteEvent) => void) => () => void
+
+    // Mesh (Tailscale) — see REMOTE_NETWORKING.md §4, §8
+    mesh: {
+      // --- lifecycle / control plane ---
+      join: (args?: {
+        hostname?: string
+        customControlURL?: string
+      }) => Promise<{ ok: boolean; error?: string }>
+      leave: () => Promise<{ ok: boolean; error?: string }>
+      logout: () => Promise<{ ok: boolean; error?: string }>
+      status: () => Promise<MeshStatus>
+      peers: () => Promise<{ peers: MeshPeer[] }>
+
+      // --- host mode ---
+      hostEnable: () => Promise<{ ok: boolean; port?: number; error?: string }>
+      hostDisable: () => Promise<{ ok: boolean; error?: string }>
+
+      // --- settings ---
+      setDeviceName: (name: string) => Promise<{ ok: boolean; error?: string }>
+      setCustomControlURL: (url: string | null) => Promise<{ ok: boolean; error?: string }>
+
+      // --- outbound peer sessions ---
+      connectPeer: (
+        peerHostname: string,
+      ) => Promise<{ ok: boolean; sessionId?: string; error?: string }>
+      disconnectPeer: (sessionId: string) => Promise<{ ok: boolean; error?: string }>
+      listPeerTabs: (
+        sessionId: string,
+      ) => Promise<{ ok: boolean; tabs?: RemoteTabInfo[]; error?: string }>
+      openRemoteTab: (
+        sessionId: string,
+        peerTabId: string,
+      ) => Promise<{ ok: boolean; localSessionId?: string; error?: string }>
+      writeRemoteTab: (localSessionId: string, data: string) => Promise<boolean>
+      closeRemoteTab: (localSessionId: string) => Promise<boolean>
+      killRemoteTab: (localSessionId: string) => Promise<{ ok: boolean; error?: string }>
+      createRemoteTab: (
+        sessionId: string,
+        args?: { cwd?: string; command?: string },
+      ) => Promise<{ ok: boolean; tab?: RemoteTabInfo; error?: string }>
+
+      // --- events ---
+      onEvent: (cb: (evt: MeshEvent) => void) => () => void
+      onRemoteTabData: (
+        localSessionId: string,
+        cb: (chunk: MeshTabDataMsg) => void,
+      ) => () => void
+    }
   }
 }
 
@@ -107,6 +155,58 @@ export type RemoteEvent =
   | { type: 'tunnel:started'; tunnelUrl: string }
   | { type: 'tunnel:stopped' }
   | { type: 'tunnel:crashed'; code: number | null }
+
+// --- Mesh types (Tailscale) ---
+
+export type MeshIpnState = 'starting' | 'needs_login' | 'running' | 'stopped'
+
+export interface MeshPeer {
+  name: string
+  ip: string
+  online: boolean
+  os?: string
+  // NOTE: the backend does not currently expose whether a given peer has
+  // host-mode enabled. UI treats all online peers as potentially connectable
+  // and surfaces a friendly error if the connection fails because they are
+  // client-only. Track TODO for v2.
+}
+
+export interface MeshStatus {
+  ipnState: MeshIpnState
+  tailnetIp: string
+  hostname: string
+  hostMode: boolean
+  peers: MeshPeer[]
+}
+
+export interface RemoteTabInfo {
+  id: string
+  title: string
+  kind?: string
+  cwd?: string
+}
+
+// Backend mesh-ipc emits a single discriminated union. The shape is a flat
+// record with optional fields (rather than a strict discriminated union in
+// TypeScript) to match the runtime payload from `electron/remote/mesh-ipc.ts`
+// — keep this in sync with MeshEvent there. We narrow in the store code.
+export type MeshEvent =
+  | { type: 'state'; state: MeshIpnState; tailnetIp?: string }
+  | { type: 'auth_url'; url: string }
+  | { type: 'peers'; peers: MeshPeer[] }
+  | { type: 'host_mode'; enabled: boolean }
+  | { type: 'peer_first_connect'; peerName: string }
+  | { type: 'peer_disconnect'; sessionId: string }
+  | { type: 'remote_tab_exit'; localSessionId: string; code: number }
+  | { type: 'crashed'; code: number | null }
+  | { type: 'error'; code?: string; message: string; sessionId?: string }
+
+// Per-localSessionId data channel — `remote:mesh:tab:data:<id>`.
+export type MeshTabDataMsg =
+  | { type: 'history'; data: string[]; lastSeq: number; truncated?: boolean }
+  | { type: 'output'; seq: number; data: string }
+  | { type: 'exit'; code: number }
+  | { type: 'error'; code: string; message?: string }
 
 declare global {
   interface Window {
