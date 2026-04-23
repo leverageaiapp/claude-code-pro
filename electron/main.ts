@@ -2,8 +2,12 @@ import { app, BrowserWindow, ipcMain, dialog, shell, powerSaveBlocker } from 'el
 import path from 'path'
 import fs from 'fs'
 import { spawn, ChildProcess } from 'child_process'
+import { PtyFanout, PtyHandle } from './remote/pty-fanout'
+import { registerRemoteIpc, RemoteIpcHandles } from './remote/ipc'
 
 let mainWindow: BrowserWindow | null = null
+const fanout = new PtyFanout()
+let remoteHandles: RemoteIpcHandles | null = null
 
 // Store active Claude CLI processes per conversation
 const claudeProcesses = new Map<string, ChildProcess>()
@@ -115,6 +119,7 @@ app.whenReady().then(() => {
   // (e.g. running `claude`) survive overnight sleep.
   powerSaveBlocker.start('prevent-app-suspension')
   createWindow()
+  remoteHandles = registerRemoteIpc(fanout, () => mainWindow)
 })
 
 function cleanup() {
@@ -122,14 +127,18 @@ function cleanup() {
     try { proc.kill() } catch {}
   })
   claudeProcesses.clear()
-  ptyProcesses.forEach((proc) => {
-    try { proc.kill() } catch {}
-  })
+  for (const tabId of Array.from(ptyProcesses)) {
+    fanout.kill(tabId)
+  }
   ptyProcesses.clear()
   watchers.forEach((w) => {
     try { w.close() } catch {}
   })
   watchers.clear()
+  if (remoteHandles) {
+    void remoteHandles.shutdown()
+    remoteHandles = null
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -360,9 +369,10 @@ ipcMain.handle('claude:abort', async (_event, conversationId: string) => {
 })
 
 // ===== Terminal IPC (PTY) =====
-// Multiple PTY instances keyed by tabId
+// Multiple PTY instances keyed by tabId. Data routing goes through PtyFanout so
+// remote share subscribers (local-server) see the same stream as the renderer.
 
-const ptyProcesses = new Map<string, any>()
+const ptyProcesses = new Set<string>()
 
 ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => {
   try {
@@ -377,24 +387,33 @@ ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => 
       env: process.env as Record<string, string>,
     })
 
-    ptyProcesses.set(tabId, ptyProc)
+    ptyProcesses.add(tabId)
 
-    ptyProc.onData((data: string) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`terminal:data:${tabId}`, data)
-      }
-    })
+    fanout.registerTab(
+      tabId,
+      ptyProc as unknown as PtyHandle,
+      (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`terminal:data:${tabId}`, data)
+        }
+      },
+    )
 
-    ptyProc.onExit(() => {
-      ptyProcesses.delete(tabId)
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`terminal:exit:${tabId}`)
-      }
-    })
+    // Notify renderer on exit. PtyFanout already clears buffer/subscribers for this tab.
+    fanout.subscribe(
+      tabId,
+      () => {},
+      () => {
+        ptyProcesses.delete(tabId)
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`terminal:exit:${tabId}`)
+        }
+      },
+    )
 
     // Auto-launch claude in new terminals
     setTimeout(() => {
-      ptyProc.write('claude\r')
+      fanout.write(tabId, 'claude\r')
     }, 300)
 
     return true
@@ -405,22 +424,17 @@ ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => 
 })
 
 ipcMain.handle('terminal:write', async (_event, tabId: string, data: string) => {
-  ptyProcesses.get(tabId)?.write(data)
+  fanout.write(tabId, data)
 })
 
 ipcMain.handle('terminal:resize', async (_event, tabId: string, cols: number, rows: number) => {
-  try {
-    ptyProcesses.get(tabId)?.resize(cols, rows)
-  } catch {
-    // ignore resize errors
-  }
+  fanout.resize(tabId, cols, rows)
 })
 
 ipcMain.handle('terminal:dispose', async (_event, tabId: string) => {
-  const proc = ptyProcesses.get(tabId)
-  if (proc) {
-    proc.kill()
+  if (ptyProcesses.has(tabId)) {
     ptyProcesses.delete(tabId)
+    fanout.kill(tabId)
   }
 })
 

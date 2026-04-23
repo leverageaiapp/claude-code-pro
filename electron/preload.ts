@@ -89,4 +89,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('fsWatch:event', listener)
     },
   },
+
+  // Remote networking (v0: Cloudflare Tunnel per-Tab share)
+  remote: {
+    share: {
+      create: (tabId: string) => ipcRenderer.invoke('remote:share:create', tabId),
+      stop: (shareId: string) => ipcRenderer.invoke('remote:share:stop', shareId),
+      list: () => ipcRenderer.invoke('remote:share:list'),
+      status: () => ipcRenderer.invoke('remote:share:status'),
+    },
+    onEvent: (callback: (data: any) => void) => {
+      const listener = (_e: any, data: any) => callback(data)
+      ipcRenderer.on('remote:event', listener)
+      return () => ipcRenderer.removeListener('remote:event', listener)
+    },
+  },
 })

@@ -72,7 +72,41 @@ interface ElectronAPI {
     onData: (tabId: string, callback: (data: string) => void) => () => void
     onExit: (tabId: string, callback: () => void) => () => void
   }
+  remote: {
+    share: {
+      create: (
+        tabId: string,
+      ) => Promise<
+        | { ok: true; shareId: string; token: string; url: string; tunnelUrl: string }
+        | { ok: false; error: string }
+      >
+      stop: (shareId: string) => Promise<boolean>
+      list: () => Promise<{ shares: RemoteShareInfo[]; tunnelUrl: string | null }>
+      status: () => Promise<{
+        tunnelUrl: string | null
+        cloudflaredRunning: boolean
+        shares: RemoteShareInfo[]
+      }>
+    }
+    onEvent: (callback: (data: RemoteEvent) => void) => () => void
+  }
 }
+
+export interface RemoteShareInfo {
+  shareId: string
+  tabId: string
+  createdAt: number
+  connectedClients: number
+}
+
+export type RemoteEvent =
+  | { type: 'share:created'; shareId: string; tabId: string; tunnelUrl?: string }
+  | { type: 'share:stopped'; shareId: string }
+  | { type: 'share:client-joined'; shareId: string; tabId: string; connectedClients: number }
+  | { type: 'share:client-left'; shareId: string; tabId: string; connectedClients: number }
+  | { type: 'tunnel:started'; tunnelUrl: string }
+  | { type: 'tunnel:stopped' }
+  | { type: 'tunnel:crashed'; code: number | null }
 
 declare global {
   interface Window {
