@@ -377,7 +377,13 @@ const ptyProcesses = new Set<string>()
 ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => {
   try {
     const pty = await import('node-pty')
-    const shellPath = process.env.SHELL || '/bin/zsh'
+    const shellPath =
+      process.env.SHELL ||
+      (process.platform === 'win32'
+        ? process.env.COMSPEC || 'powershell.exe'
+        : process.platform === 'darwin'
+          ? '/bin/zsh'
+          : '/bin/bash')
 
     const ptyProc = pty.spawn(shellPath, [], {
       name: 'xterm-256color',
