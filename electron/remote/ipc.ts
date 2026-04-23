@@ -5,6 +5,7 @@ import { LocalServer, ShareInfo, ShareEvent } from './local-server'
 import { startTunnel, stopTunnel, getTunnelUrl, isTunnelRunning, onTunnelCrash } from './tunnel-manager'
 
 const TUNNEL_IDLE_SHUTDOWN_MS = 5 * 60 * 1_000
+const MAX_SHARES = 32
 
 export interface RemoteEvent {
   type:
@@ -91,6 +92,10 @@ export function registerRemoteIpc(fanout: PtyFanout, getMainWindow: () => Browse
   ipcMain.handle('remote:share:create', async (_event, tabId: string) => {
     if (!fanout.hasTab(tabId)) {
       return { ok: false, error: 'tab_not_found' as const }
+    }
+
+    if (server.listShares().length >= MAX_SHARES) {
+      return { ok: false, error: 'too_many_shares' as const }
     }
 
     cancelTunnelShutdown()

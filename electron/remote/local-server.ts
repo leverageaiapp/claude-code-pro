@@ -13,6 +13,7 @@ const MAX_CONNECTIONS_PER_SHARE = 10
 const MSG_RATE_WINDOW_MS = 1_000
 const MSG_RATE_LIMIT = 100
 const WS_PING_INTERVAL = 30_000
+const HELLO_ACK_TIMEOUT_MS = 10_000
 
 export interface ShareInfo {
   shareId: string
@@ -295,6 +296,19 @@ export class LocalServer {
       peer: { name: os.hostname(), os: process.platform },
     })
 
+    // Force clients to complete the handshake within a bounded window; otherwise
+    // a silent peer can squat on one of the MAX_CONNECTIONS_PER_SHARE slots.
+    const helloAckTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      if (!handshakeDone) {
+        send({ type: 'error', code: 'hello_timeout' })
+        try {
+          ws.close(4003, 'hello_timeout')
+        } catch {
+          // ignore
+        }
+      }
+    }, HELLO_ACK_TIMEOUT_MS)
+
     ws.on('message', (data) => {
       const now = Date.now()
       if (now - msgWindowStart > MSG_RATE_WINDOW_MS) {
@@ -319,6 +333,7 @@ export class LocalServer {
           return
         }
         handshakeDone = true
+        clearTimeout(helloAckTimer)
         return
       }
 
@@ -364,6 +379,7 @@ export class LocalServer {
     })
 
     ws.on('close', () => {
+      clearTimeout(helloAckTimer)
       share.connectedClients.delete(ws)
       this.emit({
         type: 'share:client-left',
@@ -374,6 +390,7 @@ export class LocalServer {
     })
 
     ws.on('error', () => {
+      clearTimeout(helloAckTimer)
       share.connectedClients.delete(ws)
     })
   }
