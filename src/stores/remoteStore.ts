@@ -139,8 +139,9 @@ export const useRemoteStore = create<RemoteState>()(
 
 // Subscribe to backend events once (at module load). The renderer runs in a
 // single process so this lives for the lifetime of the app.
+let unsubscribeRemoteEvents: (() => void) | undefined
 if (typeof window !== 'undefined' && window.electronAPI?.remote?.onEvent) {
-  window.electronAPI.remote.onEvent((event: RemoteEvent) => {
+  unsubscribeRemoteEvents = window.electronAPI.remote.onEvent((event: RemoteEvent) => {
     const set = (updater: (s: RemoteState) => Partial<RemoteState>) => {
       useRemoteStore.setState((s) => updater(s))
     }
@@ -201,5 +202,15 @@ if (typeof window !== 'undefined' && window.electronAPI?.remote?.onEvent) {
         break
       }
     }
+  })
+}
+
+// In dev with Vite HMR, this module is re-evaluated on edit. Without cleanup,
+// every reload would stack another listener on the preload bridge, producing
+// duplicate event handling. Dispose the old subscription before the new module
+// takes over.
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    unsubscribeRemoteEvents?.()
   })
 }

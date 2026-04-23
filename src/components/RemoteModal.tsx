@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Copy, Check, Link2, AlertTriangle } from 'lucide-react'
 import { useRemoteStore, type Share } from '../stores/remoteStore'
 import { useTabStore, type Tab } from '../stores/tabStore'
@@ -34,6 +34,7 @@ export function RemoteModal({ open, onClose }: Props) {
   const [shareError, setShareError] = useState<string | null>(null)
   const [isSharing, setIsSharing] = useState(false)
   const [copiedShareId, setCopiedShareId] = useState<string | null>(null)
+  const copiedTimerRef = useRef<number | null>(null)
 
   // Default dropdown to the active tab when opened (if it's a terminal),
   // else the first terminal tab.
@@ -55,6 +56,17 @@ export function RemoteModal({ open, onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  // Clear any pending "Copied!" reset timer on unmount so it doesn't fire
+  // and call setCopiedShareId on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current)
+        copiedTimerRef.current = null
+      }
+    }
+  }, [])
+
   if (!open) return null
 
   const handleShare = async () => {
@@ -72,7 +84,11 @@ export function RemoteModal({ open, onClose }: Props) {
     if (!share.url) return
     navigator.clipboard.writeText(share.url)
     setCopiedShareId(share.shareId)
-    window.setTimeout(() => {
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current)
+    }
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null
       setCopiedShareId((cur) => (cur === share.shareId ? null : cur))
     }, 2000)
   }
