@@ -90,7 +90,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
-  // Remote networking (v0: Cloudflare Tunnel per-Tab share)
+  // Remote networking
+  //   - v0 `share`: Cloudflare Tunnel per-Tab share
+  //   - v1 `mesh`:  Tailscale tailnet mesh (see REMOTE_NETWORKING.md)
   remote: {
     share: {
       create: (tabId: string) => ipcRenderer.invoke('remote:share:create', tabId),
@@ -102,6 +104,56 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_e: any, data: any) => callback(data)
       ipcRenderer.on('remote:event', listener)
       return () => ipcRenderer.removeListener('remote:event', listener)
+    },
+
+    mesh: {
+      // --- control plane ---
+      join: (args?: { hostname?: string; customControlURL?: string }) =>
+        ipcRenderer.invoke('remote:mesh:join', args),
+      leave: () => ipcRenderer.invoke('remote:mesh:leave'),
+      logout: () => ipcRenderer.invoke('remote:mesh:logout'),
+      status: () => ipcRenderer.invoke('remote:mesh:status'),
+      peers: () => ipcRenderer.invoke('remote:mesh:peers'),
+
+      // --- host mode ---
+      hostEnable: () => ipcRenderer.invoke('remote:mesh:host:enable'),
+      hostDisable: () => ipcRenderer.invoke('remote:mesh:host:disable'),
+
+      // --- settings ---
+      setDeviceName: (name: string) => ipcRenderer.invoke('remote:mesh:setDeviceName', name),
+      setCustomControlURL: (url: string | null) =>
+        ipcRenderer.invoke('remote:mesh:setCustomControlURL', url),
+
+      // --- outbound peer sessions ---
+      connectPeer: (peerHostname: string) =>
+        ipcRenderer.invoke('remote:mesh:connectPeer', peerHostname),
+      disconnectPeer: (sessionId: string) =>
+        ipcRenderer.invoke('remote:mesh:disconnectPeer', sessionId),
+      listPeerTabs: (sessionId: string) =>
+        ipcRenderer.invoke('remote:mesh:listPeerTabs', sessionId),
+      openRemoteTab: (sessionId: string, peerTabId: string) =>
+        ipcRenderer.invoke('remote:mesh:openRemoteTab', sessionId, peerTabId),
+      writeRemoteTab: (localSessionId: string, data: string) =>
+        ipcRenderer.invoke('remote:mesh:writeRemoteTab', localSessionId, data),
+      closeRemoteTab: (localSessionId: string) =>
+        ipcRenderer.invoke('remote:mesh:closeRemoteTab', localSessionId),
+      killRemoteTab: (localSessionId: string) =>
+        ipcRenderer.invoke('remote:mesh:killRemoteTab', localSessionId),
+      createRemoteTab: (sessionId: string, args?: { cwd?: string; command?: string }) =>
+        ipcRenderer.invoke('remote:mesh:createRemoteTab', sessionId, args),
+
+      // --- event subscriptions ---
+      onEvent: (callback: (data: any) => void) => {
+        const listener = (_e: any, data: any) => callback(data)
+        ipcRenderer.on('remote:mesh:event', listener)
+        return () => ipcRenderer.removeListener('remote:mesh:event', listener)
+      },
+      onRemoteTabData: (localSessionId: string, callback: (msg: any) => void) => {
+        const channel = `remote:mesh:tab:data:${localSessionId}`
+        const listener = (_e: any, msg: any) => callback(msg)
+        ipcRenderer.on(channel, listener)
+        return () => ipcRenderer.removeListener(channel, listener)
+      },
     },
   },
 })
