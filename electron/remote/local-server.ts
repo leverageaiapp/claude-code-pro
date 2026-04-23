@@ -62,7 +62,14 @@ function parseCookie(header: string, name: string): string | null {
     const eq = trimmed.indexOf('=')
     if (eq < 0) continue
     if (trimmed.slice(0, eq) === name) {
-      return decodeURIComponent(trimmed.slice(eq + 1))
+      const raw = trimmed.slice(eq + 1)
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        // Malformed percent-encoding (e.g. "%GG") — treat cookie as absent
+        // rather than letting the URIError bubble up and hang the request.
+        return null
+      }
     }
   }
   return null
