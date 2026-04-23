@@ -18,24 +18,52 @@ const sigkillTimers = new WeakMap<ChildProcess, ReturnType<typeof setTimeout>>()
 // actually extracts the file to app.asar.unpacked alongside. Electron's
 // fs shim pretends the asar path exists, but child_process.spawn bypasses
 // that shim and ENOTDIRs when it tries to exec a file that lives inside
-// the asar blob. Rewrite to the unpacked path.
+// the asar blob. Always prefer the unpacked path if present.
 function resolveRealBinary(p: string): string {
-  return p.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
+  // Handle both slash flavors defensively; on Windows path.sep is '\\' but
+  // paths coming through various APIs may be normalized either way.
+  return p
+    .replace(/([\\/])app\.asar([\\/])/g, '$1app.asar.unpacked$2')
 }
 
 async function ensureCloudflared(): Promise<string> {
-  const resolved = resolveRealBinary(cloudflaredBin)
-  if (fs.existsSync(resolved)) {
-    return resolved
+  const unpacked = resolveRealBinary(cloudflaredBin)
+
+  // Prefer the asar.unpacked location — this is where the packaged app
+  // actually stores the binary (see electron-builder asarUnpack config).
+  if (fs.existsSync(unpacked)) {
+    try { fs.accessSync(unpacked, fs.constants.X_OK) } catch {
+      // Best-effort chmod in case extraction didn't preserve the execute bit.
+      try { fs.chmodSync(unpacked, 0o755) } catch { /* ignore */ }
+    }
+    return unpacked
   }
-  // Not unpacked (dev path or missing) — fall back to the original and
-  // trigger install if the file is genuinely absent.
-  if (!fs.existsSync(cloudflaredBin)) {
-    await installCloudflared(cloudflaredBin)
+
+  // Dev / untested fallback: try the original path.
+  if (fs.existsSync(cloudflaredBin) && cloudflaredBin === unpacked) {
+    // Dev (no asar involved) and the binary already exists.
+    return cloudflaredBin
   }
-  // Recheck unpacked path first, then original.
-  if (fs.existsSync(resolved)) return resolved
-  return cloudflaredBin
+
+  // Binary missing. Try to install — but install to the *unpacked*
+  // location if we're packaged, else to cloudflaredBin directly. Writing
+  // inside an asar always fails, so we never install there.
+  const installTarget = cloudflaredBin !== unpacked ? unpacked : cloudflaredBin
+  try {
+    // installCloudflared will mkdir parent dirs as needed.
+    await installCloudflared(installTarget)
+  } catch (err) {
+    throw new Error(
+      `cloudflared binary missing and auto-install failed.\n` +
+      `  Expected:  ${unpacked}\n` +
+      `  Fallback:  ${cloudflaredBin}\n` +
+      `  Error:     ${(err as Error).message ?? err}`
+    )
+  }
+  if (fs.existsSync(installTarget)) return installTarget
+  // Last-ditch: maybe install wrote to the original path somehow.
+  if (fs.existsSync(cloudflaredBin)) return cloudflaredBin
+  throw new Error(`cloudflared binary still missing after install attempt at ${installTarget}`)
 }
 
 export async function startTunnel(localPort: number): Promise<string> {
