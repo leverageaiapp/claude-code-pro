@@ -61,8 +61,7 @@
       "gatekeeperAssess": false,
       "identity": null,
       "binaries": [
-        "Contents/Resources/tsnet-sidecar/darwin-arm64/tsnet-sidecar",
-        "Contents/Resources/tsnet-sidecar/darwin-amd64/tsnet-sidecar"
+        "Contents/Resources/tsnet-sidecar/mac-arm64/tsnet-sidecar"
       ]
     },
     "dmg": {

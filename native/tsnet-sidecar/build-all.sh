@@ -26,6 +26,22 @@ fi
 
 mkdir -p build
 
+# Map Go GOOS/GOARCH to electron-builder's ${os}/${arch} naming so
+# extraResources.from = native/tsnet-sidecar/build/${os}-${arch} resolves.
+eb_os() {
+  case "$1" in
+    darwin) echo mac ;;
+    windows) echo win ;;
+    *) echo "$1" ;;
+  esac
+}
+eb_arch() {
+  case "$1" in
+    amd64) echo x64 ;;
+    *) echo "$1" ;;
+  esac
+}
+
 for t in "${TARGETS[@]}"; do
   read -r os arch <<<"$t"
   out_dir="build/${os}-${arch}"
@@ -37,6 +53,13 @@ for t in "${TARGETS[@]}"; do
   echo ">> building $os/$arch -> $out_dir/$bin"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
     go build -trimpath -ldflags="-s -w" -o "$out_dir/$bin" .
+
+  # Also publish under the electron-builder naming for extraResources.
+  eb_out_dir="build/$(eb_os "$os")-$(eb_arch "$arch")"
+  if [[ "$eb_out_dir" != "$out_dir" ]]; then
+    mkdir -p "$eb_out_dir"
+    cp "$out_dir/$bin" "$eb_out_dir/$bin"
+  fi
 done
 
 echo "done. artifacts:"

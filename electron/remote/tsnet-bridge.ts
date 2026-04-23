@@ -441,6 +441,13 @@ export class TsnetBridge extends EventEmitter {
     const arch = process.arch
     const suffix = process.platform === 'win32' ? '.exe' : ''
 
+    // electron-builder uses its own os/arch naming: darwin→mac, windows→win,
+    // amd64→x64. extraResources copies binaries under that convention, but
+    // build-all.sh also publishes under Go-native names for dev/tooling. Try
+    // both so the resolver works in packaged AND dev.
+    const ebOs = platform === 'darwin' ? 'mac' : platform === 'windows' ? 'win' : platform
+    const dirNames = Array.from(new Set([`${platform}-${arch}`, `${ebOs}-${arch}`]))
+
     // Candidate search order: packaged resources first (production), then
     // source-tree build dir (dev).
     const candidates: string[] = []
@@ -451,7 +458,9 @@ export class TsnetBridge extends EventEmitter {
         ? (process as unknown as { resourcesPath?: string }).resourcesPath
         : undefined
     if (resourcesPath) {
-      candidates.push(path.join(resourcesPath, 'tsnet-sidecar', `${platform}-${arch}`, `tsnet-sidecar${suffix}`))
+      for (const d of dirNames) {
+        candidates.push(path.join(resourcesPath, 'tsnet-sidecar', d, `tsnet-sidecar${suffix}`))
+      }
       candidates.push(path.join(resourcesPath, 'tsnet-sidecar', `tsnet-sidecar${suffix}`))
     }
 
@@ -463,7 +472,9 @@ export class TsnetBridge extends EventEmitter {
       path.resolve(process.cwd(), 'native'),
     ]
     for (const root of devRoots) {
-      candidates.push(path.join(root, 'tsnet-sidecar', 'build', `${platform}-${arch}`, `tsnet-sidecar${suffix}`))
+      for (const d of dirNames) {
+        candidates.push(path.join(root, 'tsnet-sidecar', 'build', d, `tsnet-sidecar${suffix}`))
+      }
     }
 
     for (const c of candidates) {
