@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build:sidecar": "bash native/tsnet-sidecar/build-all.sh",
-    "build:sidecar:current": "SIDECAR_ONLY_CURRENT=1 bash native/tsnet-sidecar/build-all.sh",
+    "build:sidecar:current": "bash native/tsnet-sidecar/build-all.sh --current",
     "build": "npm run build:sidecar:current && tsc && vite build",
     "build:full": "npm run build:sidecar && tsc && vite build",
     "preview": "vite preview",

@@ -16,9 +16,11 @@ TARGETS=(
   "windows amd64"
 )
 
-# Allow restricting which targets we build via an env var, so CI can skip the
-# foreign platforms it doesn't have toolchains for.
-if [[ "${SIDECAR_ONLY_CURRENT:-}" == "1" ]]; then
+# Allow restricting which targets we build via a CLI flag, so CI can skip the
+# foreign platforms it doesn't have toolchains for. Flag chosen over env var
+# because cmd.exe (Windows npm scripts default shell) can't do `VAR=1 bash …`
+# prefix env assignment.
+if [[ "${SIDECAR_ONLY_CURRENT:-}" == "1" || "${1:-}" == "--current" ]]; then
   CURRENT_OS=$(go env GOOS)
   CURRENT_ARCH=$(go env GOARCH)
   TARGETS=("$CURRENT_OS $CURRENT_ARCH")
