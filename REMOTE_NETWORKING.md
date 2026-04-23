@@ -14,7 +14,7 @@
 | 兜底方案 | **Cloudflare Quick Tunnel**（保留，承担访客 / 手机浏览器场景） |
 | 客户端形态 | 单一 binary **双模式**：同一份 claude-code-pro 既是 host（被连接）也是 client（连接到远程） |
 | 多 Tab 策略 | 方案 B：远程可看到 host 已打开的所有 Tab 并切换 |
-| 认证（主方案 v1） | 让用户使用自己的 Tailscale 账户（tsnet 内建 OAuth），不自建 Hub |
+| 认证（主方案 v1） | **A 方案 · 用户自带 Tailscale 账户**（零后端、零付费，详见 §5.7） |
 | 认证（兜底方案） | token-in-URL + httpOnly cookie（照搬 GoGoGo） |
 | 启动策略 | 默认**手动开关**；提供"启动时自动开启"的可选配置 |
 | 二进制分发 | Go 写的 `tsnet-sidecar` + electron-builder `extraResources` 打包（v1），未来可改为首次使用按需下载（LM Link 方式） |
@@ -53,7 +53,7 @@ claude-code   claude-code   claude-code    通过 CF Tunnel  通过 CF Tunnel
 
 ## 2. 用户提出的三个决策点，对应的调研结论
 
-### Q1. Tailscale tsnet 作为主方案 — ✅ 确认采用
+### Q1. Tailscale tsnet 作为主方案 — ✅ 确认采用（A 方案）
 
 **关键证据**：
 - Tailscale tsnet 是官方 Go 库，让应用**作为 tailnet 节点**，完全在**用户空间**运行
@@ -61,6 +61,14 @@ claude-code   claude-code   claude-code    通过 CF Tunnel  通过 CF Tunnel
 - **LM Studio LM Link**（2026 年 2 月上线）是几乎 1:1 重合的先例：同样是 Electron + 本地 AI 工具 + 多设备互联，走的就是这条路
 - 免费计划（6 用户 / 100 设备）对个人集群绰绰有余
 - NAT 穿透 + DERP 全球中继基础设施成熟，CGNAT 家宽 + 公司网络开箱即用
+
+**认证走 A 方案：用户自带 Tailscale 账户**（详细对比见 §5.7）。理由摘要：
+- **零运维、零付费**（B 方案自建 Hub 需签 Tailscale B2B 合同，$5k+/年起）
+- **用户隐私更好**（每个用户是自己 tailnet 的主人，我们无法插手他们的 ACL）
+- **数据主权清晰**（用户随时可以删号走人，不被锁定）
+- 目标用户（开发者）对 Tailscale 品牌无心智障碍
+
+LM Studio 选 B 方案是因为他们有商业模式和品牌诉求；我们 v1 不需要。
 
 ### Q2. Cloudflare Tunnel 是否保留？会和 Tailscale 冲突吗？ — ✅ 保留，不冲突，但有**权限继承**问题需要注意
 
@@ -218,9 +226,9 @@ Mesh 监听（tsnet 内部，供其他节点 peer-to-peer 访问）：
 | `/mesh/tabs` | GET | 列出本机已打开 Tab |
 | `/mesh/health` | GET | 心跳检测 |
 
-### 4.3 认证流程 — 让用户用自己的 Tailscale 账户（v1）
+### 4.3 认证流程 — A 方案：用户自带 Tailscale 账户
 
-**放弃自建 Hub**（LM Studio 那套要自己跑后端 + 申请 Tailscale B2B），让用户直接授权给自己的 tailnet：
+**v1 确定走 A 方案**（对比 B/C 方案的完整分析见 §5.7）。让用户直接授权给自己的 tailnet，我们不跑任何后端：
 
 ```
 用户点击"启用 Mesh 网络"
@@ -243,7 +251,9 @@ Electron UI 从"等待授权"切到"已连接"
 
 **对用户体验**：一次性 OAuth，之后所有设备自动互相可见。如果用户还没 Tailscale 账户，login 页面会引导注册（免费、Google 一键登录）。
 
-**未来优化**（v2+）：如果要彻底避免让用户知道"Tailscale"这个品牌，可以搭个 Hub 服务（类似 LM Link），但那是 SaaS 工作量，v1 不做。
+**v1 就可以做的高级选项**：设置里暴露"自定义 Coordination Server URL"输入框（tsnet 原生支持 `Server.ControlURL`），高级用户可指向自己搭的 [headscale](https://github.com/juanfont/headscale) 实例，完全脱离 Tailscale 公司基础设施。默认隐藏，不干扰普通用户。
+
+**未来可选升级到 B 方案**（详见 §5.7.5 触发条件），但 v1 / v2 都不做。
 
 ### 4.4 设备命名
 
@@ -322,6 +332,103 @@ Electron UI 从"等待授权"切到"已连接"
 | [tailscale/golink](https://github.com/tailscale/golink) | 生产级 tsnet app 范例，ListenTLS + WhoIs 模式 |
 | [Yeeb1/SockTail](https://github.com/Yeeb1/SockTail) | 单二进制 SOCKS5 + tsnet，构建流程参考 |
 | [tailscale/libtailscale](https://github.com/tailscale/libtailscale) | C 绑定，如果未来要 N-API 集成 |
+
+### 5.7 基础设施分层 · 自建 vs 复用 · 方案决策
+
+讨论 LM Link 时容易把 "LM Studio 自建了 Tailscale 替代品" 和 "LM Studio 在 Tailscale 上盖了一层"混淆。这一节把基础设施拆开看清楚，再决定我们走哪条路。
+
+#### 5.7.1 Tailscale 本身的三层基础设施
+
+```
+┌─────────────────────────────────────────────────┐
+│  控制平面（Coordination Server）                  │
+│  login.tailscale.com（Tailscale 公司运营）        │
+│  • 设备注册、OAuth 认证                            │
+│  • 公钥交换、ACL 下发                              │
+│  • 看得到：谁在哪台设备、谁跟谁能通                 │
+│  • 看不到：数据内容（端到端 WG 加密）               │
+└─────────────────────────────────────────────────┘
+                    ↕ 控制信令（TLS）
+┌─────────────────────────────────────────────────┐
+│  数据中继平面（DERP Relays）                      │
+│  全球 20+ 中继（Tailscale 公司运营）               │
+│  • P2P 打不通时兜底                                │
+│  • 只转发 WireGuard 密文，看不到明文               │
+│  • CGNAT / 对称 NAT / 企业防火墙的救生索           │
+└─────────────────────────────────────────────────┘
+                    ↕ 兜底
+┌─────────────────────────────────────────────────┐
+│  数据面（P2P WireGuard）                          │
+│  • 设备之间直连，优先路径                          │
+│  • 约 90% 场景能打通                               │
+│  • 真正传输用户数据                                │
+└─────────────────────────────────────────────────┘
+```
+
+#### 5.7.2 LM Studio 实际自建了什么
+
+**只有身份代理一层**。其余全部复用 Tailscale：
+
+| 层级 | 运营方 | LM Studio 的角色 |
+|---|---|---|
+| 身份层 | **LM Studio Hub** | ✅ 自建（Google OAuth → 代理铸造 Tailscale auth key）|
+| Tailscale 控制平面 | Tailscale 公司 | ❌ 通过 B2B API 程序化租用 |
+| DERP 中继 | Tailscale 公司 | ❌ 复用 |
+| P2P 数据面 | 设备之间 | 不需要"建"——WireGuard 协议本身 |
+
+#### 5.7.3 LM Studio 几乎可以肯定是付费 Tailscale 客户
+
+**未 100% 公开证据，但推理链很强**：
+
+1. LM Link FAQ 原文 "we create a dedicated network programmatically [...] with full control over the ACL" —— "programmatically + full ACL control" 是 Tailscale **免费个人计划不提供**的能力
+2. LM Link 设备**不占用户的 100 台免费额度**，说明设备挂在 LM Studio 名下的 tailnet（多租户隔离是企业功能）
+3. Tailscale 有专门的 **"Embedded Tailscale / Tailscale for Platforms"** 商业产品（2024+），就是给 LM Studio 这种"嵌入 Tailscale 到自家产品"的公司用的
+4. Tailscale 博客那篇 [LM Link 联合宣传](https://tailscale.com/blog/lm-link-remote-llm-access) 本身是商业合作的标志产物
+5. DERP 中继带宽对免费用户有公平使用限制，稳定服务几十万用户的 LLM 推理流量不可能免费
+
+**具体金额未公开**。业内类似 Embedded 合同通常 $5k–$50k/年起步，随 MAU 和流量扩张。
+
+#### 5.7.4 三方案对比
+
+| 方案 | 身份 | 控制面 | 中继 | 我们的成本 | 用户体验 |
+|---|---|---|---|---|---|
+| **A. 用户自带 Tailscale 账户** | Tailscale | Tailscale | Tailscale | **零** | 一次 OAuth，看到 Tailscale 品牌 |
+| **B. 学 LM Link · 自建 Hub** | 我们（Hub）| Tailscale（付费 API）| Tailscale | 后端服务 + B2B 合同（$5k+/年） | 用户只看到 Google 登录，不知道 Tailscale |
+| **C. 完全自主 · headscale + 自建 DERP** | 我们 | 我们（headscale） | 我们（全球 VPS 集群） | 重运维（全球中继 + 合规 + 隐私政策） | 品牌独立，但成本高 |
+
+**依赖风险**：
+- **A 方案**：依赖 Tailscale 的控制面 + DERP 永久可用。最坏情况 Tailscale 倒闭时，[headscale](https://github.com/juanfont/headscale) 可接替控制面（tsnet 客户端能配置替换 coordination server 地址）；DERP 不可用则仅 P2P 能通的场景可用
+- **B 方案**：比 A 多一个 Hub 单点。Hub 挂了所有新用户无法首次授权，已授权的设备仍能继续用（auth key 已下发）
+- **C 方案**：完全自主，但这基本等于"重做一个 Tailscale"。考虑到 Tailscale 有几十人团队专注全球 DERP 优化和 NAT 穿透算法，我们很难做好
+
+#### 5.7.5 v1 决策：确定走 A 方案
+
+**零运维、零付费、用户隐私最好**：
+
+1. **零运维成本**：我们不跑任何后端服务，所有用户白嫖自己的 Tailscale 免费额度（6 用户 / 100 设备，对个人集群绰绰有余）
+2. **零付费**：A 方案成本曲线是**常数 0**，无论用户数增长到多少；B 方案成本随用户数线性增长
+3. **用户隐私更好**：每个用户是自己 tailnet 的主人。只有本人的 Google/GitHub 账户权限能加设备。B 方案中 Hub 运营方（我们）理论上能在后台操作 ACL，把自己的设备加进用户 tailnet——这是结构性的信任问题
+4. **数据主权清晰**：用户随时可在 Tailscale 后台删号或移除设备，不被锁定
+5. **符合 claude-code-pro 定位**：这是一个本地优先的工具，不想变成"需要注册我们账户的 SaaS"
+6. **"Powered by Tailscale" 不是痛点**：只出现在 Remote Modal 底部一行字。目标用户（开发者）大多已经知道 Tailscale，反而是信任加分项
+
+**未来条件满足才考虑升级到 B 方案**：
+
+- 用户群明确扩展到非技术人群，Tailscale 的存在成为心智障碍
+- 产品走商业化路径，需要中心化设备发现 / 组织协作功能
+- 监管要求审计设备连接元数据
+
+**C 方案不在路线图上**。产品方向明确不是"给企业做私有部署"。
+
+#### 5.7.6 A 方案下的备选：让重度用户自己跑 headscale
+
+对于强隐私 / 不想依赖 Tailscale 的高级用户，我们可以在设置里暴露一个可选项：**"使用自定义 coordination server"**。tsnet 的 `Server.ControlURL` 字段支持指向 headscale 实例。这几乎零代码成本（tsnet 原生支持），只是 UI 里多加一个输入框和文档指引。
+
+- 对普通用户：界面默认隐藏，不干扰 A 方案体验
+- 对高级用户：自己搭 headscale 就能完全脱离 Tailscale 公司基础设施
+- 我们不运营 headscale，不承担运维
+
+这是个 v1 就可以做的一个小口子，成本几乎为零，但给用户留了"逃生通道"。
 
 ---
 
