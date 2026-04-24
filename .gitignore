@@ -59,3 +59,9 @@ public/excalidraw-assets/
 native/tsnet-sidecar/build/
 native/tsnet-sidecar/tsnet-sidecar
 native/tsnet-sidecar/tsnet-sidecar.exe
+
+# Local mesh test scripts
+ws-test.js
+ws-edge.js
+ws-stress.js
+check-tabs.js
