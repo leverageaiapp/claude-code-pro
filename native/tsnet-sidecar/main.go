@@ -124,16 +124,24 @@ func main() {
 		currentState: "starting",
 	}
 
+	debugLogs := os.Getenv("CC_DEBUG_LOGS") == "1"
+	logf := func(string, ...any) {}
+	userLogf := func(format string, args ...any) {}
+	if debugLogs {
+		logf = func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "[tsnet] "+format+"\n", args...)
+		}
+		userLogf = func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "[tsnet-user] "+format+"\n", args...)
+		}
+	}
 	sc.srv = &tsnet.Server{
 		Hostname:   hostname,
 		Dir:        filepath.Clean(stateDir),
 		ControlURL: controlURL,
 		AuthKey:    authKey,
-		Logf:       func(string, ...any) {}, // suppress tsnet internal log noise
-		UserLogf:   func(format string, args ...any) {
-			// Users of the API expect auth URLs via the IPN bus, not this
-			// logger. Dropping output here keeps sensitive URLs off disk.
-		},
+		Logf:       logf,
+		UserLogf:   userLogf,
 	}
 
 	// Bring up Control HTTP server (for Node → sidecar commands).

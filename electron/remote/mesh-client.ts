@@ -17,7 +17,34 @@ import * as os from 'os'
 import type { SidecarSocks } from './tsnet-bridge'
 
 const PROTOCOL_VERSION = 1
-const HELLO_TIMEOUT_MS = 10_000
+// Cold WG handshake + DERP fallback can take longer than a "normal" HTTP
+// request. Keep this generous so the first connect after joining tailnet
+// doesn't spuriously time out.
+const HELLO_TIMEOUT_MS = 20_000
+
+// SOCKS5 errors on initial connect are often transient: tsnet's netmap may
+// show a peer as online before its WireGuard handshake completes, which
+// surfaces as "Socks5 proxy …" failures. Retry a few times before giving up.
+const INITIAL_CONNECT_RETRIES = 3
+const INITIAL_RETRY_BACKOFF_MS = [800, 2_000, 4_000]
+
+function isTransientProxyError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return (
+    msg.includes('socks') ||
+    msg.includes('proxy') ||
+    msg.includes('etimedout') ||
+    msg.includes('econnrefused') ||
+    msg.includes('ehostunreach') ||
+    msg.includes('enetunreach') ||
+    msg.includes('hello_timeout') ||
+    msg.includes('ws closed during handshake')
+  )
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
 const REQUEST_TIMEOUT_MS = 15_000
 const RECONNECT_MAX_ATTEMPTS = 5
 const RECONNECT_BASE_DELAY_MS = 1_000
@@ -77,8 +104,32 @@ export class MeshClientSession extends EventEmitter {
 
   async connect(): Promise<void> {
     if (this.handshakePromise) return this.handshakePromise
-    this.handshakePromise = this.doConnect()
+    this.handshakePromise = this.doConnectWithRetry()
     return this.handshakePromise
+  }
+
+  // Wrap doConnect in a small retry loop for transient SOCKS/WG issues.
+  // Only retries the INITIAL handshake, not post-connect reconnects (those
+  // are handled separately via scheduleReconnect).
+  private async doConnectWithRetry(): Promise<void> {
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt <= INITIAL_CONNECT_RETRIES; attempt++) {
+      try {
+        await this.doConnect()
+        return
+      } catch (err) {
+        lastErr = err
+        if (this.closed || this.opts.signal?.aborted) throw err
+        if (!isTransientProxyError(err) || attempt === INITIAL_CONNECT_RETRIES) throw err
+        const wait = INITIAL_RETRY_BACKOFF_MS[attempt] ?? 4_000
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[mesh-client] transient connect error "${(err as Error).message}" to ${this.opts.peerHostname}; retry in ${wait}ms (attempt ${attempt + 1}/${INITIAL_CONNECT_RETRIES})`
+        )
+        await sleep(wait)
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
   }
 
   private doConnect(): Promise<void> {

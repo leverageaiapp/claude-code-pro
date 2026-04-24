@@ -283,7 +283,19 @@ export function registerMeshIpc(opts: MeshIpcOptions): MeshIpcHandles {
     try {
       await session.connect()
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const raw = err instanceof Error ? err.message : String(err)
+      const lower = raw.toLowerCase()
+      // Translate common low-level failures into something actionable for
+      // the user. The mesh-client already retries a few times on transient
+      // SOCKS/WG issues; if we still got here something is genuinely wrong.
+      let message = raw
+      if (lower.includes('socks') || lower.includes('ehostunreach') || lower.includes('enetunreach')) {
+        message = `Could not reach ${peerHostname} over the tailnet. It may be offline, or Host mode is not enabled on that device.`
+      } else if (lower.includes('econnrefused')) {
+        message = `${peerHostname} is online but is not accepting connections. Enable Host mode on that device.`
+      } else if (lower.includes('hello_timeout') || lower.includes('ws closed during handshake')) {
+        message = `${peerHostname} did not respond in time. Check that it is online and Host mode is on.`
+      }
       return { ok: false, error: message }
     }
     session.on('peer-disconnect', () => {
