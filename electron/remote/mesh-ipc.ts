@@ -15,7 +15,12 @@ import * as crypto from 'crypto'
 import type { PtyFanout } from './pty-fanout'
 import { TsnetBridge, defaultHostname, defaultStateDir, SidecarPeer } from './tsnet-bridge'
 import { MeshServer, MeshTabInfo, TabCreator, TabCloser } from './mesh-server'
-import { MeshClientSession, RemoteTabInfo } from './mesh-client'
+import {
+  MeshClientSession,
+  RemoteTabInfo,
+  classifyConnectError,
+  type ConnectRetryInfo,
+} from './mesh-client'
 
 export interface MeshEvent {
   type:
@@ -28,6 +33,7 @@ export interface MeshEvent {
     | 'remote_tab_exit'
     | 'crashed'
     | 'error'
+    | 'connect_retry'
   state?: string
   tailnetIp?: string
   url?: string
@@ -38,6 +44,11 @@ export interface MeshEvent {
   localSessionId?: string
   code?: number | null
   message?: string
+  // For 'connect_retry'.
+  peerHostname?: string
+  attempt?: number
+  maxAttempts?: number
+  waitMs?: number
 }
 
 export interface MeshIpcHandles {
@@ -280,24 +291,27 @@ export function registerMeshIpc(opts: MeshIpcOptions): MeshIpcHandles {
     }
     const sessionId = 'ms-' + crypto.randomBytes(8).toString('hex')
     const session = new MeshClientSession({ peerHostname, socks })
+    // Surface in-progress retries so the UI can show "retrying 2/3…" rather
+    // than freezing on the Connect button. Subscribed BEFORE connect() so
+    // we don't miss the first retry's emit.
+    const onRetry = (info: ConnectRetryInfo) => {
+      emit({
+        type: 'connect_retry',
+        peerHostname: info.peerHostname,
+        attempt: info.attempt,
+        maxAttempts: info.max,
+        waitMs: info.waitMs,
+      })
+    }
+    session.on('connect-retry', onRetry)
     try {
       await session.connect()
     } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err)
-      const lower = raw.toLowerCase()
-      // Translate common low-level failures into something actionable for
-      // the user. The mesh-client already retries a few times on transient
-      // SOCKS/WG issues; if we still got here something is genuinely wrong.
-      let message = raw
-      if (lower.includes('socks') || lower.includes('ehostunreach') || lower.includes('enetunreach')) {
-        message = `Could not reach ${peerHostname} over the tailnet. It may be offline, or Host mode is not enabled on that device.`
-      } else if (lower.includes('econnrefused')) {
-        message = `${peerHostname} is online but is not accepting connections. Enable Host mode on that device.`
-      } else if (lower.includes('hello_timeout') || lower.includes('ws closed during handshake')) {
-        message = `${peerHostname} did not respond in time. Check that it is online and Host mode is on.`
-      }
-      return { ok: false, error: message }
+      session.off('connect-retry', onRetry)
+      const cls = classifyConnectError(err, peerHostname)
+      return { ok: false, error: cls.userMessage }
     }
+    session.off('connect-retry', onRetry)
     session.on('peer-disconnect', () => {
       emit({ type: 'peer_disconnect', sessionId })
     })

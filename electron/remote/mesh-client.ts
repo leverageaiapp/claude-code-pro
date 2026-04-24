@@ -25,21 +25,83 @@ const HELLO_TIMEOUT_MS = 20_000
 // SOCKS5 errors on initial connect are often transient: tsnet's netmap may
 // show a peer as online before its WireGuard handshake completes, which
 // surfaces as "Socks5 proxy …" failures. Retry a few times before giving up.
-const INITIAL_CONNECT_RETRIES = 3
+export const INITIAL_CONNECT_RETRIES = 3
 const INITIAL_RETRY_BACKOFF_MS = [800, 2_000, 4_000]
 
-function isTransientProxyError(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
-  return (
-    msg.includes('socks') ||
-    msg.includes('proxy') ||
-    msg.includes('etimedout') ||
-    msg.includes('econnrefused') ||
-    msg.includes('ehostunreach') ||
-    msg.includes('enetunreach') ||
-    msg.includes('hello_timeout') ||
-    msg.includes('ws closed during handshake')
-  )
+export type ConnectErrorKind = 'transient' | 'no_host' | 'timeout' | 'other'
+
+export interface ClassifiedConnectError {
+  kind: ConnectErrorKind
+  /** Whether the initial-connect retry loop should attempt again. */
+  isTransient: boolean
+  /** Original error message, untouched, for logs. */
+  raw: string
+  /** Friendly message with the peer name interpolated, suitable for a toast. */
+  userMessage: string
+}
+
+// Single source of truth for "what went wrong on connect, and how should we
+// show it / retry it". Used by both the retry loop in mesh-client and the
+// IPC error translator in mesh-ipc, so the two views can never disagree.
+//
+// The matchers are deliberately conservative: tsnet's SOCKS5 collapses every
+// dial failure into REP=0x01 ("Failure"), so a "Socks5 proxy rejected" string
+// can mean almost anything (peer offline, WG not yet up, port closed, MagicDNS
+// miss). We treat it as transient for the first few attempts and only show
+// the user-facing offline message after retries are exhausted.
+export function classifyConnectError(
+  err: unknown,
+  peerHostname: string,
+): ClassifiedConnectError {
+  const raw = err instanceof Error ? err.message : String(err)
+  const m = raw.toLowerCase()
+
+  // socks-proxy-agent surface for any SOCKS5 REP code != 0.
+  // e.g. "Socks5 proxy rejected connection - Failure"
+  const isSocksReject = m.startsWith('socks5 proxy rejected connection')
+  // Raw socket errors that may bubble up either before SOCKS5 (sidecar
+  // unreachable) or as part of the proxy's own dial.
+  const isHostUnreach = m.includes('ehostunreach') || m.includes('enetunreach')
+  const isRefused = m.includes('econnrefused')
+  const isTimeout =
+    m.includes('etimedout') ||
+    m === 'hello_timeout' ||
+    m.startsWith('ws closed during handshake')
+
+  if (isSocksReject || isHostUnreach) {
+    return {
+      kind: 'transient',
+      isTransient: true,
+      raw,
+      userMessage: `Could not reach ${peerHostname} over the tailnet. It may be offline, or Host mode is not enabled on that device.`,
+    }
+  }
+  if (isTimeout) {
+    return {
+      kind: 'timeout',
+      isTransient: true,
+      raw,
+      userMessage: `${peerHostname} did not respond in time. Check that it is online and Host mode is on.`,
+    }
+  }
+  if (isRefused) {
+    return {
+      kind: 'no_host',
+      // Sidecar may be mid-restart; one cheap retry is worth attempting.
+      isTransient: true,
+      raw,
+      userMessage: `${peerHostname} is online but is not accepting connections. Enable Host mode on that device.`,
+    }
+  }
+  return { kind: 'other', isTransient: false, raw, userMessage: raw }
+}
+
+export interface ConnectRetryInfo {
+  peerHostname: string
+  attempt: number // 1-based
+  max: number
+  waitMs: number
+  errorKind: ConnectErrorKind
 }
 
 function sleep(ms: number): Promise<void> {
@@ -111,6 +173,10 @@ export class MeshClientSession extends EventEmitter {
   // Wrap doConnect in a small retry loop for transient SOCKS/WG issues.
   // Only retries the INITIAL handshake, not post-connect reconnects (those
   // are handled separately via scheduleReconnect).
+  //
+  // Emits a 'connect-retry' event on each retry so the UI can surface
+  // progress (otherwise the user sees a frozen Connect button for up to
+  // ~7s of backoff + however long the underlying handshake takes).
   private async doConnectWithRetry(): Promise<void> {
     let lastErr: unknown = null
     for (let attempt = 0; attempt <= INITIAL_CONNECT_RETRIES; attempt++) {
@@ -120,16 +186,37 @@ export class MeshClientSession extends EventEmitter {
       } catch (err) {
         lastErr = err
         if (this.closed || this.opts.signal?.aborted) throw err
-        if (!isTransientProxyError(err) || attempt === INITIAL_CONNECT_RETRIES) throw err
+        const cls = classifyConnectError(err, this.opts.peerHostname)
+        if (!cls.isTransient || attempt === INITIAL_CONNECT_RETRIES) throw err
         const wait = INITIAL_RETRY_BACKOFF_MS[attempt] ?? 4_000
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[mesh-client] transient connect error "${(err as Error).message}" to ${this.opts.peerHostname}; retry in ${wait}ms (attempt ${attempt + 1}/${INITIAL_CONNECT_RETRIES})`
+        const info: ConnectRetryInfo = {
+          peerHostname: this.opts.peerHostname,
+          attempt: attempt + 1,
+          max: INITIAL_CONNECT_RETRIES,
+          waitMs: wait,
+          errorKind: cls.kind,
+        }
+        this.logDebug(
+          `transient connect error "${cls.raw}" to ${this.opts.peerHostname}; retry in ${wait}ms (attempt ${attempt + 1}/${INITIAL_CONNECT_RETRIES})`,
         )
+        this.emit('connect-retry', info)
         await sleep(wait)
       }
     }
     throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+  }
+
+  // Best-effort debug log. Goes to stderr (visible to the parent Electron
+  // process and any attached console) AND to a 'debug' event so the IPC
+  // layer can forward it. Avoids `console.warn`, which is silently dropped
+  // in packaged Windows builds with no console attached.
+  private logDebug(line: string): void {
+    try {
+      process.stderr.write(`[mesh-client] ${line}\n`)
+    } catch {
+      // ignore
+    }
+    this.emit('debug', line)
   }
 
   private doConnect(): Promise<void> {

@@ -200,6 +200,13 @@ export type MeshEvent =
   | { type: 'remote_tab_exit'; localSessionId: string; code: number }
   | { type: 'crashed'; code: number | null }
   | { type: 'error'; code?: string; message: string; sessionId?: string }
+  | {
+      type: 'connect_retry'
+      peerHostname: string
+      attempt: number
+      maxAttempts: number
+      waitMs: number
+    }
 
 // Per-localSessionId data channel — `remote:mesh:tab:data:<id>`.
 export type MeshTabDataMsg =

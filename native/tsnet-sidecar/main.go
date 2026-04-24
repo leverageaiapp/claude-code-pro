@@ -124,15 +124,23 @@ func main() {
 		currentState: "starting",
 	}
 
+	// CC_DEBUG_LOGS=1 routes tsnet's internal log to stderr for local
+	// debugging. Enable only when reproducing a bug — never in shipped
+	// builds, never in shared logs.
+	//
+	// Notes on what gets dropped vs forwarded:
+	//   - Logf  (verbose internal control/wireguard/magicsock log) → stderr
+	//   - UserLogf (user-facing messages from tsnet, INCLUDING the one-time
+	//     interactive login URL) → intentionally still suppressed. The login
+	//     URL grants tailnet access to anyone who opens it; we surface it
+	//     properly through the IPN bus auth_url event instead, so support
+	//     captures of stderr are safe to share.
 	debugLogs := os.Getenv("CC_DEBUG_LOGS") == "1"
 	logf := func(string, ...any) {}
 	userLogf := func(format string, args ...any) {}
 	if debugLogs {
 		logf = func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "[tsnet] "+format+"\n", args...)
-		}
-		userLogf = func(format string, args ...any) {
-			fmt.Fprintf(os.Stderr, "[tsnet-user] "+format+"\n", args...)
 		}
 	}
 	sc.srv = &tsnet.Server{

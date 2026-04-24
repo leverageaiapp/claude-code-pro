@@ -638,6 +638,21 @@ if (
         // will show an overlay. Nothing store-wide to do for now.
         break
       }
+      case 'connect_retry': {
+        // Surface a single info toast on the first retry so the Connect
+        // button doesn't appear frozen during the (up to ~7s of backoff +
+        // ~20s per handshake) retry sequence. Skip later attempts — they'd
+        // just stack identical toasts.
+        if (event.attempt === 1) {
+          useRemoteStore.getState().pushToast({
+            kind: 'info',
+            title: `Connecting to ${event.peerHostname}…`,
+            body: `Slow link — retrying (up to ${event.maxAttempts} attempts).`,
+            ttlMs: 8000,
+          })
+        }
+        break
+      }
       case 'crashed': {
         useRemoteStore.getState().pushToast({
           kind: 'reconnecting',
