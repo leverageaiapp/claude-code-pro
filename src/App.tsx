@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { FileTree } from './components/FileTree'
 import { EditorPanel, destroyEditor } from './components/Editor'
 import { TerminalPanel, destroyTerminal } from './components/Terminal'
@@ -513,7 +513,12 @@ function MyDevicesSection({
   // Only show peers that look like claude-code-pro nodes; hide the rest of
   // the user's tailnet (phones, routers, other servers) which would
   // ECONNREFUSED on port 4242.
-  const appPeers = peers.filter(isClaudeCodePeer)
+  // Sort alphabetically by name so the list is stable across `peers` events
+  // (the sidecar emits in arbitrary / netmap-internal order, which made
+  // rows shuffle every few seconds).
+  const appPeers = [...peers]
+    .filter(isClaudeCodePeer)
+    .sort((a, b) => a.name.localeCompare(b.name))
   return (
     <div className="border-b border-panel-border shrink-0">
       <button
@@ -568,6 +573,27 @@ function PeerRow({
   const refreshPeerTabs = useRemoteStore((s) => s.refreshPeerTabs)
   const createTabOnPeer = useRemoteStore((s) => s.createTabOnPeer)
   const pushToast = useRemoteStore((s) => s.pushToast)
+
+  // Look up which of this peer's remote tabs are already attached locally,
+  // so we can (a) focus an existing local tab on re-click instead of
+  // creating a duplicate attachment, and (b) highlight the row when its
+  // local tab is the active one.
+  const localTabs = useTabStore((s) => s.tabs)
+  const activeTabId = useTabStore((s) => s.activeTabId)
+  const setActiveTab = useTabStore((s) => s.setActiveTab)
+  const localTabIdByPeerTabId = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const t of localTabs) {
+      if (
+        t.type === 'remote-terminal' &&
+        t.peerHostname === peer.name &&
+        t.peerTabId
+      ) {
+        out[t.peerTabId] = t.id
+      }
+    }
+    return out
+  }, [localTabs, peer.name])
 
   // Lazy connect on first expand. Re-running on re-expand after a previous
   // failure is intentional — ensurePeerSession is idempotent for live
@@ -699,10 +725,20 @@ function PeerRow({
             </div>
           )}
           {status === 'connected' &&
-            tabs.map((t) => (
+            tabs.map((t) => {
+              const localTabId = localTabIdByPeerTabId[t.id]
+              const isOpenLocally = !!localTabId
+              const isActive = isOpenLocally && localTabId === activeTabId
+              return (
               <button
                 key={t.id}
                 onClick={() => {
+                  // Already attached locally → just focus that tab. Avoids
+                  // spawning a duplicate attachment to the same remote PTY.
+                  if (localTabId) {
+                    setActiveTab(localTabId)
+                    return
+                  }
                   if (!session?.sessionId) return
                   void onOpenRemoteTab({
                     sessionId: session.sessionId,
@@ -710,10 +746,23 @@ function PeerRow({
                     peerTab: t,
                   })
                 }}
-                className="w-full flex items-center gap-1.5 px-2 py-[3px] text-left text-[12px] text-gray-200 hover:bg-panel-hover rounded transition-colors"
-                title={t.cwd || t.title}
+                className={`w-full flex items-center gap-1.5 px-2 py-[3px] text-left text-[12px] rounded transition-colors ${
+                  isActive
+                    ? 'bg-blue-600/30 text-white border-l-2 border-blue-500 -ml-[2px]'
+                    : isOpenLocally
+                      ? 'text-gray-100 hover:bg-panel-hover'
+                      : 'text-gray-300 hover:bg-panel-hover'
+                }`}
+                title={
+                  isOpenLocally
+                    ? `${t.cwd || t.title} (open — click to focus)`
+                    : t.cwd || t.title
+                }
               >
-                <Terminal size={11} className="text-green-400 shrink-0" />
+                <Terminal
+                  size={11}
+                  className={`shrink-0 ${isOpenLocally ? 'text-green-400' : 'text-gray-500'}`}
+                />
                 <span className="truncate">{t.title || t.id}</span>
                 {t.cwd && (
                   <span className="ml-auto text-[10px] text-gray-500 truncate max-w-[100px]">
@@ -721,7 +770,8 @@ function PeerRow({
                   </span>
                 )}
               </button>
-            ))}
+              )
+            })}
           {status === 'connected' && (
             <div className="pt-1">
               {showNewTabForm ? (
