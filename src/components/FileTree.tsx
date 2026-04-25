@@ -197,6 +197,22 @@ function TreeNode({ entry, depth, onRefresh }: TreeNodeProps) {
     }
   }, [expanded])
 
+  // Auto-refresh when a watched fs event hits a path inside this directory
+  useEffect(() => {
+    if (!expanded || !entry.isDirectory) return
+    const prefix = entry.path.endsWith('/') ? entry.path : entry.path + '/'
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const remove = window.electronAPI.fsWatch.onEvent(({ path }) => {
+      if (!path.startsWith(prefix)) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(loadChildren, 150)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      remove()
+    }
+  }, [expanded, entry.path, entry.isDirectory, loadChildren])
+
   const handleClick = async () => {
     if (entry.isDirectory) {
       if (!expanded) loadChildren()
@@ -281,6 +297,21 @@ export function FileTree() {
   useEffect(() => {
     loadRoot()
   }, [loadRoot])
+
+  // Auto-refresh root entries when a watched fs event hits this workspace
+  useEffect(() => {
+    if (!cwd) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const remove = window.electronAPI.fsWatch.onEvent(({ cwd: watchedCwd }) => {
+      if (watchedCwd !== cwd) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(loadRoot, 150)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      remove()
+    }
+  }, [cwd, loadRoot])
 
   const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault()
