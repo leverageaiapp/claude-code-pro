@@ -35,8 +35,12 @@ function App() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(240)
   const { cwd, setCwd } = useFileStore()
-  const { tabs, activeTabId, setActiveTab, closeTab, addTerminalTab, addRemoteTab } =
+  const { tabs, activeTabId, setActiveTab, closeTab, addTerminalTab, addRemoteTab, reorderTabs } =
     useTabStore()
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null)
+  const [tabDropTarget, setTabDropTarget] = useState<
+    { id: string; position: 'before' | 'after' } | null
+  >(null)
   const debugVisible = useDebugStore((s) => s.visible)
   const setDebugVisible = useDebugStore((s) => s.setVisible)
   const debugLogCount = useDebugStore((s) => s.logs.length)
@@ -98,6 +102,19 @@ function App() {
       })
     }
   }, [tabs.map((t) => t.cwd).join('|')])
+
+  // Force terminals to refit whenever the sidebar opens, closes, or is
+  // resized. Without this, xterm's `cols` stays at the value computed
+  // before the layout change, so the pty keeps wrapping at the old
+  // width and rendered text overflows the now-narrower panel.
+  useEffect(() => {
+    const t1 = setTimeout(() => window.dispatchEvent(new Event('resize')), 50)
+    const t2 = setTimeout(() => window.dispatchEvent(new Event('resize')), 250)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [showSidebar, sidebarWidth])
 
   // On first launch: prompt to open a folder if none exists
   useEffect(() => {
@@ -316,16 +333,66 @@ function App() {
           {/* Tab Bar */}
           <div className="flex items-center bg-[#252526] border-b border-panel-border shrink-0">
             <div className="flex flex-1 overflow-x-auto">
-              {tabs.map((tab) => (
+              {tabs.map((tab) => {
+                const isDropBefore =
+                  tabDropTarget?.id === tab.id && tabDropTarget.position === 'before'
+                const isDropAfter =
+                  tabDropTarget?.id === tab.id && tabDropTarget.position === 'after'
+                return (
                 <div
                   key={tab.id}
-                  className={`group flex items-center gap-1.5 px-3 py-[6px] cursor-pointer border-r border-panel-border text-[13px] min-w-0 shrink-0 ${
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('application/x-tab-id', tab.id)
+                    setDraggingTabId(tab.id)
+                  }}
+                  onDragOver={(e) => {
+                    if (!draggingTabId || draggingTabId === tab.id) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const position =
+                      e.clientX < rect.left + rect.width / 2 ? 'before' : 'after'
+                    if (
+                      tabDropTarget?.id !== tab.id ||
+                      tabDropTarget.position !== position
+                    ) {
+                      setTabDropTarget({ id: tab.id, position })
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    // Only clear when leaving the tab itself, not crossing into children
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      if (tabDropTarget?.id === tab.id) setTabDropTarget(null)
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const fromId = e.dataTransfer.getData('application/x-tab-id')
+                    if (fromId && fromId !== tab.id && tabDropTarget) {
+                      reorderTabs(fromId, tabDropTarget.id, tabDropTarget.position)
+                    }
+                    setDraggingTabId(null)
+                    setTabDropTarget(null)
+                  }}
+                  onDragEnd={() => {
+                    setDraggingTabId(null)
+                    setTabDropTarget(null)
+                  }}
+                  className={`group relative flex items-center gap-1.5 px-3 py-[6px] cursor-pointer border-r border-panel-border text-[13px] min-w-0 shrink-0 ${
                     tab.id === activeTabId
                       ? 'bg-panel-bg text-white border-t-2 border-t-blue-500'
                       : 'text-gray-400 hover:bg-panel-hover border-t-2 border-t-transparent'
-                  }`}
+                  } ${draggingTabId === tab.id ? 'opacity-40' : ''}`}
                   onClick={() => setActiveTab(tab.id)}
                 >
+                  {isDropBefore && (
+                    <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-blue-500 pointer-events-none" />
+                  )}
+                  {isDropAfter && (
+                    <span className="absolute right-0 top-0 bottom-0 w-[2px] bg-blue-500 pointer-events-none" />
+                  )}
                   {tab.type === 'terminal' ? (
                     <Terminal size={14} className="text-green-400 shrink-0" />
                   ) : tab.type === 'remote-terminal' ? (
@@ -345,7 +412,8 @@ function App() {
                     <X size={14} className="text-gray-400" />
                   </button>
                 </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Add Tab Button */}

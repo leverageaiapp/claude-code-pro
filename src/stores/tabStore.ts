@@ -87,6 +87,7 @@ interface TabStore {
   updateTabTitle: (id: string, title: string) => void
   setTabViewMode: (id: string, mode: EditorViewMode) => void
   updateRemoteTabStatus: (id: string, status: RemoteTerminalStatus) => void
+  reorderTabs: (fromId: string, toId: string, position: 'before' | 'after') => void
   getActiveTab: () => Tab | undefined
 }
 
@@ -225,6 +226,21 @@ export const useTabStore = create<TabStore>()(
     set((state) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, viewMode: mode } : t)),
     })),
+
+  reorderTabs: (fromId, toId, position) =>
+    set((state) => {
+      if (fromId === toId) return state
+      const fromIdx = state.tabs.findIndex((t) => t.id === fromId)
+      const toIdx = state.tabs.findIndex((t) => t.id === toId)
+      if (fromIdx === -1 || toIdx === -1) return state
+      const next = state.tabs.slice()
+      const [moved] = next.splice(fromIdx, 1)
+      // Re-resolve target index after splice
+      const targetBase = next.findIndex((t) => t.id === toId)
+      const insertAt = position === 'before' ? targetBase : targetBase + 1
+      next.splice(insertAt, 0, moved)
+      return { tabs: next }
+    }),
 
   getActiveTab: () => {
     const { tabs, activeTabId } = get()

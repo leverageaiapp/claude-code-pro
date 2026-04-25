@@ -122,7 +122,7 @@ export function TerminalPanel({ tabId, cwd, isActive }: TerminalPanelProps) {
       })
     }
 
-    // Handle resize
+    // Handle resize from container layout changes (sidebar toggle, splitter drag, etc.)
     const observer = new ResizeObserver(() => {
       try {
         fit.fit()
@@ -132,8 +132,23 @@ export function TerminalPanel({ tabId, cwd, isActive }: TerminalPanelProps) {
     })
     observer.observe(containerRef.current)
 
+    // Also refit on window resize. ResizeObserver alone occasionally
+    // misses synthetic layout changes (e.g. sidebar toggle dispatching
+    // a window resize event); the window listener is a cheap belt-and-
+    // suspenders backup so xterm's cols never desync from the visible
+    // panel width.
+    const onWindowResize = () => {
+      try {
+        fit.fit()
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('resize', onWindowResize)
+
     return () => {
       observer.disconnect()
+      window.removeEventListener('resize', onWindowResize)
     }
   }, [tabId, cwd])
 
@@ -221,10 +236,10 @@ export function TerminalPanel({ tabId, cwd, isActive }: TerminalPanelProps) {
   }, [tabId])
 
   return (
-    <div ref={wrapperRef} className="w-full h-full relative">
+    <div ref={wrapperRef} className="w-full h-full relative overflow-hidden">
       <div
         ref={containerRef}
-        className="w-full h-full"
+        className="w-full h-full overflow-hidden"
         style={{ padding: '4px', background: '#1e1e1e' }}
       />
       {isDragOver && (
