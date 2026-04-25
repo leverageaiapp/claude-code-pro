@@ -50,6 +50,27 @@ export interface MeshSession {
   openedAt: number
 }
 
+// Per-peer persistent connection state for the sidebar's Remote Hosts UI.
+// We keep at most one "host session" per peerHostname so the sidebar can
+// show a live list of the host's tabs without reconnecting on every
+// expand. Lifecycle: created on first ensurePeerSession, dropped when the
+// peer goes offline / the session disconnects / mesh leaves.
+export type PeerSessionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'error'
+  | 'disconnected'
+
+export interface PeerSession {
+  peerHostname: string
+  sessionId: string | null
+  status: PeerSessionStatus
+  // Live tab list — initialised by ensurePeerSession via listPeerTabs and
+  // updated by 'peer_tab_created' / 'peer_tab_closed' events from the host.
+  tabs: RemoteTabInfo[]
+  error?: string
+}
+
 interface MeshState {
   // L1 — user has clicked "Join tailnet" in this app session. Derived from
   // status.ipnState in practice but kept around so the title bar icon
@@ -71,6 +92,12 @@ interface MeshState {
   // In-memory outbound sessions. Plain object for easy serialization /
   // reactivity in Zustand (Map is awkward under structural updates).
   activeSessions: Record<string, MeshSession>
+  // Persistent per-host sessions used by the sidebar Remote Hosts list.
+  // Keyed by peerHostname so the UI can look up by the stable identifier
+  // it already has in `peers`. Distinct from `activeSessions` (which is
+  // keyed by ephemeral sessionId) so RemoteModal's existing flows keep
+  // working unchanged.
+  peerSessions: Record<string, PeerSession>
 }
 
 interface ToastState {
@@ -141,6 +168,14 @@ interface RemoteState {
   closeRemoteTab: (localSessionId: string) => Promise<void>
   killRemoteTab: (localSessionId: string) => Promise<{ ok: boolean; error?: string }>
 
+  // persistent per-host sessions (sidebar)
+  ensurePeerSession: (peerHostname: string) => Promise<PeerSession>
+  refreshPeerTabs: (peerHostname: string) => Promise<void>
+  createTabOnPeer: (
+    peerHostname: string,
+    args?: { cwd?: string; command?: string },
+  ) => Promise<{ ok: boolean; tab?: RemoteTabInfo; error?: string }>
+
   // trust / toasts
   markPeerTrusted: (peerName: string) => void
   pushToast: (t: Omit<ToastMessage, 'id' | 'createdAt'>) => void
@@ -165,6 +200,7 @@ const initialMesh: MeshState = {
   peers: [],
   trustedPeers: [],
   activeSessions: {},
+  peerSessions: {},
 }
 
 let toastCounter = 0
@@ -311,6 +347,7 @@ export const useRemoteStore = create<RemoteState>()(
             authUrl: null,
             peers: [],
             activeSessions: {},
+            peerSessions: {},
           },
         }))
         return res
@@ -397,6 +434,7 @@ export const useRemoteStore = create<RemoteState>()(
             tailnetIp: null,
             peers: [],
             activeSessions: {},
+            peerSessions: {},
           },
         }))
       },
@@ -448,6 +486,149 @@ export const useRemoteStore = create<RemoteState>()(
 
       killRemoteTab: async (localSessionId: string) =>
         window.electronAPI.remote.mesh.killRemoteTab(localSessionId),
+
+      // --- persistent per-host sessions (sidebar Remote Hosts) ---
+
+      ensurePeerSession: async (peerHostname: string) => {
+        // Bail if mesh has been left between the user's click and our
+        // first set — otherwise the writes below would resurrect a phantom
+        // entry under mesh.enabled=false.
+        if (!get().mesh.enabled) {
+          return {
+            peerHostname,
+            sessionId: null,
+            status: 'error' as const,
+            tabs: [],
+            error: 'mesh is not enabled',
+          }
+        }
+        const existing = get().mesh.peerSessions[peerHostname]
+        // Idempotent: return any non-failed in-progress / live session.
+        // If a previous attempt failed or got disconnected we retry below
+        // (the user re-expanding the row is treated as "try again").
+        if (
+          existing &&
+          (existing.status === 'connecting' || existing.status === 'connected')
+        ) {
+          return existing
+        }
+        const initial: PeerSession = {
+          peerHostname,
+          sessionId: null,
+          status: 'connecting',
+          tabs: [],
+        }
+        set((state) => ({
+          mesh: {
+            ...state.mesh,
+            peerSessions: { ...state.mesh.peerSessions, [peerHostname]: initial },
+          },
+        }))
+        // Helper: write only if our 'connecting' marker is still present.
+        // If something cleared it (leaveMesh / peers offline / a parallel
+        // ensurePeerSession that already raced ahead) we drop the result on
+        // the floor rather than resurrecting a stale entry.
+        const settle = (entry: PeerSession): boolean => {
+          let written = false
+          set((state) => {
+            const cur = state.mesh.peerSessions[peerHostname]
+            if (!cur || cur.status !== 'connecting') return state
+            written = true
+            return {
+              mesh: {
+                ...state.mesh,
+                peerSessions: { ...state.mesh.peerSessions, [peerHostname]: entry },
+              },
+            }
+          })
+          return written
+        }
+        const connRes = await get().connectToPeer(peerHostname)
+        if (!connRes.ok || !connRes.sessionId) {
+          const failed: PeerSession = {
+            peerHostname,
+            sessionId: null,
+            status: 'error',
+            tabs: [],
+            error: connRes.error,
+          }
+          settle(failed)
+          return failed
+        }
+        const sessionId = connRes.sessionId
+        const tabsRes = await get().listPeerTabs(sessionId)
+        const tabs = tabsRes.ok ? tabsRes.tabs ?? [] : []
+        const next: PeerSession = {
+          peerHostname,
+          sessionId,
+          status: tabsRes.ok ? 'connected' : 'error',
+          tabs,
+          error: tabsRes.ok ? undefined : tabsRes.error,
+        }
+        const written = settle(next)
+        if (!written) {
+          // Our entry was removed during the await — the caller's session
+          // is now unreferenced. Tear it down so the underlying
+          // MeshClientSession doesn't leak.
+          void window.electronAPI.remote.mesh.disconnectPeer(sessionId)
+        }
+        return next
+      },
+
+      refreshPeerTabs: async (peerHostname: string) => {
+        const entry = get().mesh.peerSessions[peerHostname]
+        if (!entry?.sessionId || entry.status !== 'connected') return
+        const res = await get().listPeerTabs(entry.sessionId)
+        if (!res.ok) return
+        set((state) => {
+          const cur = state.mesh.peerSessions[peerHostname]
+          if (!cur || cur.sessionId !== entry.sessionId) return state
+          return {
+            mesh: {
+              ...state.mesh,
+              peerSessions: {
+                ...state.mesh.peerSessions,
+                [peerHostname]: { ...cur, tabs: res.tabs ?? [] },
+              },
+            },
+          }
+        })
+      },
+
+      createTabOnPeer: async (peerHostname, args) => {
+        const entry = await get().ensurePeerSession(peerHostname)
+        if (entry.status !== 'connected' || !entry.sessionId) {
+          return { ok: false, error: entry.error || 'peer not connected' }
+        }
+        const res = await window.electronAPI.remote.mesh.createRemoteTab(
+          entry.sessionId,
+          args,
+        )
+        if (res.ok && res.tab) {
+          // Optimistically merge. mesh-client.ts emits 'tab:created' even
+          // for the requester (the response message is the source for both
+          // the resolved request AND the event), so peer_tab_created will
+          // also fire shortly with the same tab. The de-dup below makes
+          // both paths converge; we keep the optimistic merge so the UI
+          // doesn't blink between "create returned" and "event arrived".
+          set((state) => {
+            const cur = state.mesh.peerSessions[peerHostname]
+            if (!cur) return state
+            const already = cur.tabs.some((t) => t.id === res.tab!.id)
+            if (already) return state
+            return {
+              mesh: {
+                ...state.mesh,
+                peerSessions: {
+                  ...state.mesh.peerSessions,
+                  [peerHostname]: { ...cur, tabs: [...cur.tabs, res.tab!] },
+                },
+              },
+            }
+          })
+        }
+        return res
+      },
 
       markPeerTrusted: (peerName: string) =>
         set((state) => {
@@ -607,7 +788,45 @@ if (
         break
       }
       case 'peers': {
-        set((s) => ({ mesh: { ...s.mesh, peers: event.peers } }))
+        // Drop persistent peer sessions for hosts that are no longer
+        // visible or have gone offline. Important: also call disconnectPeer
+        // on the main side — otherwise the underlying MeshClientSession
+        // keeps its reconnect timer and event subscriptions alive
+        // (mesh-client.ts only self-destructs on 'gave-up' or explicit
+        // close, not on a peers-list removal).
+        const onlineNames = new Set(
+          event.peers.filter((p) => p.online).map((p) => p.name),
+        )
+        const beforeSessions = useRemoteStore.getState().mesh.peerSessions
+        const toDisconnect: string[] = []
+        for (const [name, ps] of Object.entries(beforeSessions)) {
+          if (!onlineNames.has(name) && ps.sessionId) {
+            toDisconnect.push(ps.sessionId)
+          }
+        }
+        set((s) => {
+          const nextSessions = { ...s.mesh.peerSessions }
+          let changed = false
+          for (const name of Object.keys(nextSessions)) {
+            if (!onlineNames.has(name)) {
+              delete nextSessions[name]
+              changed = true
+            }
+          }
+          return {
+            mesh: {
+              ...s.mesh,
+              peers: event.peers,
+              peerSessions: changed ? nextSessions : s.mesh.peerSessions,
+            },
+          }
+        })
+        for (const sid of toDisconnect) {
+          // Fire-and-forget; the IPC handler is idempotent and the
+          // peer_disconnect event it triggers is harmless (entry already
+          // removed above, sessionId mismatch).
+          void window.electronAPI.remote.mesh.disconnectPeer(sid)
+        }
         break
       }
       case 'host_mode': {
@@ -626,10 +845,72 @@ if (
         break
       }
       case 'peer_disconnect': {
+        const terminal = event.terminal === true
         set((s) => {
-          const next = { ...s.mesh.activeSessions }
-          delete next[event.sessionId]
-          return { mesh: { ...s.mesh, activeSessions: next } }
+          const nextActive = { ...s.mesh.activeSessions }
+          delete nextActive[event.sessionId]
+          // Persistent sidebar entries: drop ONLY on a terminal disconnect
+          // (gave-up). A transient close means mesh-client is already
+          // reconnecting; dropping would orphan the underlying session and
+          // cause a duplicate connection on the next user re-expand.
+          // Match by sessionId rather than peerHostname so a fresh retry
+          // for the same host isn't clobbered.
+          if (!terminal) {
+            return { mesh: { ...s.mesh, activeSessions: nextActive } }
+          }
+          const nextPeer = { ...s.mesh.peerSessions }
+          let peerChanged = false
+          for (const [hostname, ps] of Object.entries(nextPeer)) {
+            if (ps.sessionId === event.sessionId) {
+              delete nextPeer[hostname]
+              peerChanged = true
+            }
+          }
+          return {
+            mesh: {
+              ...s.mesh,
+              activeSessions: nextActive,
+              peerSessions: peerChanged ? nextPeer : s.mesh.peerSessions,
+            },
+          }
+        })
+        break
+      }
+      case 'peer_tab_created': {
+        set((s) => {
+          const cur = s.mesh.peerSessions[event.peerHostname]
+          if (!cur || cur.sessionId !== event.sessionId) return s
+          if (cur.tabs.some((t) => t.id === event.tab.id)) return s
+          return {
+            mesh: {
+              ...s.mesh,
+              peerSessions: {
+                ...s.mesh.peerSessions,
+                [event.peerHostname]: {
+                  ...cur,
+                  tabs: [...cur.tabs, event.tab],
+                },
+              },
+            },
+          }
+        })
+        break
+      }
+      case 'peer_tab_closed': {
+        set((s) => {
+          const cur = s.mesh.peerSessions[event.peerHostname]
+          if (!cur || cur.sessionId !== event.sessionId) return s
+          const filtered = cur.tabs.filter((t) => t.id !== event.tabId)
+          if (filtered.length === cur.tabs.length) return s
+          return {
+            mesh: {
+              ...s.mesh,
+              peerSessions: {
+                ...s.mesh.peerSessions,
+                [event.peerHostname]: { ...cur, tabs: filtered },
+              },
+            },
+          }
         })
         break
       }

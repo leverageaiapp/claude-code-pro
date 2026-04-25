@@ -196,7 +196,16 @@ export type MeshEvent =
   | { type: 'peers'; peers: MeshPeer[] }
   | { type: 'host_mode'; enabled: boolean }
   | { type: 'peer_first_connect'; peerName: string }
-  | { type: 'peer_disconnect'; sessionId: string }
+  | {
+      type: 'peer_disconnect'
+      sessionId: string
+      peerHostname?: string
+      // True when the underlying MeshClientSession has given up reconnecting
+      // ('gave-up' event). Absent / false means a transient ws-close that
+      // the client is already re-attempting — UI should NOT drop persistent
+      // state yet.
+      terminal?: boolean
+    }
   | { type: 'remote_tab_exit'; localSessionId: string; code: number }
   | { type: 'crashed'; code: number | null }
   | { type: 'error'; code?: string; message: string; sessionId?: string }
@@ -206,6 +215,18 @@ export type MeshEvent =
       attempt: number
       maxAttempts: number
       waitMs: number
+    }
+  | {
+      type: 'peer_tab_created'
+      sessionId: string
+      peerHostname: string
+      tab: RemoteTabInfo
+    }
+  | {
+      type: 'peer_tab_closed'
+      sessionId: string
+      peerHostname: string
+      tabId: string
     }
 
 // Per-localSessionId data channel — `remote:mesh:tab:data:<id>`.

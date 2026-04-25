@@ -34,6 +34,8 @@ export interface MeshEvent {
     | 'crashed'
     | 'error'
     | 'connect_retry'
+    | 'peer_tab_created'
+    | 'peer_tab_closed'
   state?: string
   tailnetIp?: string
   url?: string
@@ -49,6 +51,15 @@ export interface MeshEvent {
   attempt?: number
   maxAttempts?: number
   waitMs?: number
+  // For 'peer_tab_created' / 'peer_tab_closed' — sessionId/peerHostname above
+  // identify which peer; tab/tabId carry the payload.
+  tab?: RemoteTabInfo
+  tabId?: string
+  // For 'peer_disconnect' — distinguishes a transient ws-close (the
+  // underlying MeshClientSession will auto-reconnect) from a terminal
+  // 'gave-up' (no more attempts; the session is dead). Renderer uses this
+  // to keep persistent peerSession entries alive across blips.
+  terminal?: boolean
 }
 
 export interface MeshIpcHandles {
@@ -177,6 +188,18 @@ export function registerMeshIpc(opts: MeshIpcOptions): MeshIpcHandles {
 
   ipcMain.handle('remote:mesh:leave', async () => {
     try {
+      // Close every outbound peer session BEFORE the sidecar goes away —
+      // otherwise their reconnect timers + WS subscriptions outlive the
+      // tailnet they were connecting through, leaking until app quit.
+      for (const entry of peerSessions.values()) {
+        try {
+          entry.session.close()
+        } catch {
+          // ignore
+        }
+      }
+      peerSessions.clear()
+      localTabPipes.clear()
       // Host-mode off first to ensure listener is gone before sidecar stops.
       try {
         await bridge.disableListen()
@@ -313,15 +336,35 @@ export function registerMeshIpc(opts: MeshIpcOptions): MeshIpcHandles {
     }
     session.off('connect-retry', onRetry)
     session.on('peer-disconnect', () => {
-      emit({ type: 'peer_disconnect', sessionId })
+      // Transient: mesh-client's scheduleReconnect() is already taking
+      // another swing; the renderer should NOT drop persistent state yet.
+      emit({ type: 'peer_disconnect', sessionId, peerHostname, terminal: false })
     })
     session.on('gave-up', () => {
-      emit({ type: 'peer_disconnect', sessionId })
+      emit({ type: 'peer_disconnect', sessionId, peerHostname, terminal: true })
       peerSessions.delete(sessionId)
     })
     session.on('error', (err) => {
       const message = err instanceof Error ? err.message : String(err)
       emit({ type: 'error', message, sessionId })
+    })
+    // Forward live tab list updates from the host's broadcast (mesh-server.ts
+    // calls broadcastTabCreated/broadcastTabClosed on tab lifecycle events).
+    // Each peer subscriber is independent, so we re-emit per session.
+    session.on('tab:created', (tab: unknown) => {
+      if (tab && typeof tab === 'object' && typeof (tab as RemoteTabInfo).id === 'string') {
+        emit({
+          type: 'peer_tab_created',
+          sessionId,
+          peerHostname,
+          tab: tab as RemoteTabInfo,
+        })
+      }
+    })
+    session.on('tab:closed', (tabId: unknown) => {
+      if (typeof tabId === 'string') {
+        emit({ type: 'peer_tab_closed', sessionId, peerHostname, tabId })
+      }
     })
     peerSessions.set(sessionId, {
       id: sessionId,
