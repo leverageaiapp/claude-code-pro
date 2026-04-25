@@ -2,8 +2,34 @@ import { app, BrowserWindow, ipcMain, dialog, shell, powerSaveBlocker } from 'el
 import path from 'path'
 import fs from 'fs'
 import { spawn, ChildProcess } from 'child_process'
+import { PtyFanout, PtyHandle } from './remote/pty-fanout'
+import { registerRemoteIpc, RemoteIpcHandles } from './remote/ipc'
+import { registerMeshIpc, MeshIpcHandles } from './remote/mesh-ipc'
+import type { MeshTabInfo } from './remote/mesh-server'
+
+// Single-instance lock (REMOTE_NETWORKING.md §11.2). Without this two
+// instances could race to own state-dir, PID file, and even spawn two
+// tsnet-sidecars trying to take over the same Tailscale identity.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  process.exit(0)
+}
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
 
 let mainWindow: BrowserWindow | null = null
+const fanout = new PtyFanout()
+let remoteHandles: RemoteIpcHandles | null = null
+let meshHandles: MeshIpcHandles | null = null
+
+// Side-table of currently-open tabs so the mesh server can answer
+// /mesh/tabs without round-tripping to the renderer. Updated in the terminal
+// lifecycle IPC handlers below.
+const tabsMeta = new Map<string, MeshTabInfo>()
 
 // Store active Claude CLI processes per conversation
 const claudeProcesses = new Map<string, ChildProcess>()
@@ -115,6 +141,47 @@ app.whenReady().then(() => {
   // (e.g. running `claude`) survive overnight sleep.
   powerSaveBlocker.start('prevent-app-suspension')
   createWindow()
+  remoteHandles = registerRemoteIpc(fanout, () => mainWindow)
+
+  meshHandles = registerMeshIpc({
+    userDataDir: app.getPath('userData'),
+    fanout,
+    getMainWindow: () => mainWindow,
+  })
+  // Mesh server needs a live view of local tabs + callbacks for create/close.
+  meshHandles.setTabsProvider(() => Array.from(tabsMeta.values()))
+  meshHandles.setTabCreator(async ({ cwd, command }) => {
+    // Route tab creation requests from peers through a renderer IPC event.
+    // The renderer is the source of truth for tab id generation / title /
+    // kind. We wait for the renderer to create it and register its PTY here
+    // (which populates tabsMeta) before returning.
+    //
+    // v1 implementation is conservative: we synthesize an id, spawn a PTY
+    // locally via the same fanout pipeline, and return. The renderer will
+    // pick up the tab when it next re-reads state — full renderer-driven
+    // creation is a follow-up once the UI subagent wires `tab:new-from-peer`.
+    if (!cwd && command === undefined) cwd = app.getPath('home')
+    const tabId = 'mesh-' + Math.random().toString(36).slice(2, 10)
+    const created = await createLocalPty(tabId, cwd || app.getPath('home'), command)
+    if (!created) return null
+    const meta: MeshTabInfo = {
+      id: tabId,
+      title: command || 'Remote Session',
+      kind: 'terminal',
+      cwd,
+    }
+    tabsMeta.set(tabId, meta)
+    meshHandles?.notifyTabCreated(meta)
+    return meta
+  })
+  meshHandles.setTabCloser(async (tabId) => {
+    if (tabsMeta.has(tabId)) {
+      tabsMeta.delete(tabId)
+      fanout.kill(tabId)
+      ptyProcesses.delete(tabId)
+      meshHandles?.notifyTabClosed(tabId)
+    }
+  })
 })
 
 function cleanup() {
@@ -122,14 +189,22 @@ function cleanup() {
     try { proc.kill() } catch {}
   })
   claudeProcesses.clear()
-  ptyProcesses.forEach((proc) => {
-    try { proc.kill() } catch {}
-  })
+  for (const tabId of Array.from(ptyProcesses)) {
+    fanout.kill(tabId)
+  }
   ptyProcesses.clear()
   watchers.forEach((w) => {
     try { w.close() } catch {}
   })
   watchers.clear()
+  if (meshHandles) {
+    void meshHandles.shutdown()
+    meshHandles = null
+  }
+  if (remoteHandles) {
+    void remoteHandles.shutdown()
+    remoteHandles = null
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -360,14 +435,25 @@ ipcMain.handle('claude:abort', async (_event, conversationId: string) => {
 })
 
 // ===== Terminal IPC (PTY) =====
-// Multiple PTY instances keyed by tabId
+// Multiple PTY instances keyed by tabId. Data routing goes through PtyFanout so
+// remote share subscribers (local-server) see the same stream as the renderer.
 
-const ptyProcesses = new Map<string, any>()
+const ptyProcesses = new Set<string>()
 
-ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => {
+// createLocalPty spawns a PTY for a tab and wires it through the fanout. It is
+// the single source of truth used by both the renderer-driven terminal:create
+// IPC and the mesh tab:new handler — so mesh-created tabs participate in the
+// same broadcast / output-buffer pipeline as locally-created tabs.
+async function createLocalPty(tabId: string, cwd: string, launchCommand?: string): Promise<boolean> {
   try {
     const pty = await import('node-pty')
-    const shellPath = process.env.SHELL || '/bin/zsh'
+    const shellPath =
+      process.env.SHELL ||
+      (process.platform === 'win32'
+        ? process.env.COMSPEC || 'powershell.exe'
+        : process.platform === 'darwin'
+          ? '/bin/zsh'
+          : '/bin/bash')
 
     const ptyProc = pty.spawn(shellPath, [], {
       name: 'xterm-256color',
@@ -377,50 +463,75 @@ ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => 
       env: process.env as Record<string, string>,
     })
 
-    ptyProcesses.set(tabId, ptyProc)
+    ptyProcesses.add(tabId)
 
-    ptyProc.onData((data: string) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`terminal:data:${tabId}`, data)
-      }
-    })
+    fanout.registerTab(
+      tabId,
+      ptyProc as unknown as PtyHandle,
+      (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`terminal:data:${tabId}`, data)
+        }
+      },
+    )
 
-    ptyProc.onExit(() => {
-      ptyProcesses.delete(tabId)
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(`terminal:exit:${tabId}`)
-      }
-    })
+    fanout.subscribe(
+      tabId,
+      () => {},
+      () => {
+        ptyProcesses.delete(tabId)
+        if (tabsMeta.has(tabId)) {
+          tabsMeta.delete(tabId)
+          meshHandles?.notifyTabClosed(tabId)
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(`terminal:exit:${tabId}`)
+        }
+      },
+    )
 
-    // Auto-launch claude in new terminals
-    setTimeout(() => {
-      ptyProc.write('claude\r')
-    }, 300)
+    const cmd = launchCommand !== undefined ? launchCommand : 'claude'
+    if (cmd) {
+      // Auto-launch command in new terminals (default is `claude`, but mesh
+      // peers can override via tab:new { command }).
+      setTimeout(() => {
+        fanout.write(tabId, cmd + '\r')
+      }, 300)
+    }
 
     return true
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to create PTY:', err)
     return false
   }
+}
+
+ipcMain.handle('terminal:create', async (_event, tabId: string, cwd: string) => {
+  const ok = await createLocalPty(tabId, cwd)
+  if (ok) {
+    const meta: MeshTabInfo = { id: tabId, title: 'Terminal', kind: 'terminal', cwd }
+    tabsMeta.set(tabId, meta)
+    meshHandles?.notifyTabCreated(meta)
+  }
+  return ok
 })
 
 ipcMain.handle('terminal:write', async (_event, tabId: string, data: string) => {
-  ptyProcesses.get(tabId)?.write(data)
+  fanout.write(tabId, data)
 })
 
 ipcMain.handle('terminal:resize', async (_event, tabId: string, cols: number, rows: number) => {
-  try {
-    ptyProcesses.get(tabId)?.resize(cols, rows)
-  } catch {
-    // ignore resize errors
-  }
+  fanout.resize(tabId, cols, rows)
 })
 
 ipcMain.handle('terminal:dispose', async (_event, tabId: string) => {
-  const proc = ptyProcesses.get(tabId)
-  if (proc) {
-    proc.kill()
+  if (ptyProcesses.has(tabId)) {
     ptyProcesses.delete(tabId)
+    fanout.kill(tabId)
+    if (tabsMeta.has(tabId)) {
+      tabsMeta.delete(tabId)
+      meshHandles?.notifyTabClosed(tabId)
+    }
   }
 })
 

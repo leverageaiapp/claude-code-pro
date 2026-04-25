@@ -1,21 +1,76 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-export type TabType = 'terminal' | 'editor'
+export type TabType = 'terminal' | 'editor' | 'remote-terminal'
 
 export type EditorViewMode = 'preview' | 'source'
+
+export type RemoteTerminalStatus =
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'peer-exited'
 
 export interface Tab {
   id: string
   type: TabType
   title: string
-  cwd: string // every tab belongs to a workspace directory
+  cwd: string // every tab belongs to a workspace directory (remote tabs: a display-only hint)
   // For editor tabs
   filePath?: string
   fileContent?: string
   language?: string
   isDirty?: boolean
   viewMode?: EditorViewMode // only for markdown files; preview by default
+
+  // For remote-terminal tabs
+  peerHostname?: string
+  peerSessionId?: string
+  peerTabId?: string
+  localSessionId?: string
+  remoteStatus?: RemoteTerminalStatus
+}
+
+// Discriminated helper for the remote-terminal shape — used by the
+// RemoteTerminal component where the fields are required.
+export interface RemoteTerminalTab extends Tab {
+  type: 'remote-terminal'
+  peerHostname: string
+  peerSessionId: string
+  peerTabId: string
+  localSessionId: string
+  status: RemoteTerminalStatus
+}
+
+// Narrow-cast helper. Safer than `as RemoteTerminalTab` scattered in UI
+// code because it centralises the invariant.
+export function asRemoteTab(tab: Tab): RemoteTerminalTab | null {
+  if (
+    tab.type !== 'remote-terminal' ||
+    !tab.peerHostname ||
+    !tab.peerSessionId ||
+    !tab.peerTabId ||
+    !tab.localSessionId
+  ) {
+    return null
+  }
+  return {
+    ...tab,
+    type: 'remote-terminal',
+    peerHostname: tab.peerHostname,
+    peerSessionId: tab.peerSessionId,
+    peerTabId: tab.peerTabId,
+    localSessionId: tab.localSessionId,
+    status: tab.remoteStatus ?? 'connecting',
+  }
+}
+
+interface AddRemoteTabArgs {
+  peerHostname: string
+  peerSessionId: string
+  peerTabId: string
+  peerTabTitle: string
+  localSessionId: string
 }
 
 interface TabStore {
@@ -24,12 +79,14 @@ interface TabStore {
 
   addTerminalTab: (cwd: string) => string
   addEditorTab: (cwd: string, filePath: string, content: string, language: string) => void
+  addRemoteTab: (args: AddRemoteTabArgs) => string
   setActiveTab: (id: string) => void
   closeTab: (id: string) => void
   updateTabContent: (id: string, content: string) => void
   markTabClean: (id: string) => void
   updateTabTitle: (id: string, title: string) => void
   setTabViewMode: (id: string, mode: EditorViewMode) => void
+  updateRemoteTabStatus: (id: string, status: RemoteTerminalStatus) => void
   getActiveTab: () => Tab | undefined
 }
 
@@ -77,6 +134,31 @@ export const useTabStore = create<TabStore>()(
     }))
     return id
   },
+
+  addRemoteTab: (args) => {
+    const id = genId()
+    const tab: Tab = {
+      id,
+      type: 'remote-terminal',
+      title: `🌐 ${args.peerHostname} · ${args.peerTabTitle}`,
+      cwd: args.peerHostname, // not a real cwd; shown as a hint only
+      peerHostname: args.peerHostname,
+      peerSessionId: args.peerSessionId,
+      peerTabId: args.peerTabId,
+      localSessionId: args.localSessionId,
+      remoteStatus: 'connecting',
+    }
+    set((state) => ({
+      tabs: [...state.tabs, tab],
+      activeTabId: id,
+    }))
+    return id
+  },
+
+  updateRemoteTabStatus: (id, status) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, remoteStatus: status } : t)),
+    })),
 
   addEditorTab: (cwd, filePath, content, language) => {
     const { tabs } = get()
@@ -156,7 +238,13 @@ export const useTabStore = create<TabStore>()(
       // with a fresh pty spawned at the same cwd when the component
       // mounts; editor tabs keep their last-seen content + dirty flag.
       partialize: (state) => ({
-        tabs: state.tabs,
+        // Drop remote-terminal tabs on persist — the session id / local
+        // session id they reference belong to an old main-process mesh
+        // session that no longer exists after restart. Users reconnect
+        // from the sidebar or the Mesh tab. Local terminal + editor tabs
+        // are rehydratable (pty respawned at same cwd; editor contents
+        // kept with dirty flag).
+        tabs: state.tabs.filter((t) => t.type !== 'remote-terminal'),
         activeTabId: state.activeTabId,
       }),
       // After rehydration, bump the id counter past anything we just
